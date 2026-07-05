@@ -3,9 +3,12 @@ import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
 
 const specimens = await getCollection('specimens');
-// 임시 정렬: featured 우선, 이후 slug — M2에서 채집일 역순으로 교체
+// 정렬: featured 상단 고정 → 채집일 역순 → slug (SPEC §5 그리드 규칙)
 const ordered = [...specimens].sort(
-  (a, b) => Number(b.data.featured) - Number(a.data.featured) || a.id.localeCompare(b.id)
+  (a, b) =>
+    Number(b.data.featured) - Number(a.data.featured) ||
+    b.data.collectedAt.getTime() - a.data.collectedAt.getTime() ||
+    a.id.localeCompare(b.id)
 );
 
 // base('/specimen') 하위 정적 경로 결합 — BASE_URL 트레일링 슬래시 유무 흡수

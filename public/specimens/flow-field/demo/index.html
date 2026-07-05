@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Flow Field 재현 스니펫</title>
+<style>
+  /* 기법 연구: 노이즈 벡터장(flow field)을 따라 흐르는 파티클 스트림.
+     각 입자는 위치의 노이즈 각도를 속도로 삼고, 커서는 국소 소용돌이가 된다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #04070c;
+    font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif;
+    cursor: crosshair;
+  }
+  canvas#fld { position: fixed; inset: 0; z-index: 1; }
+  .title {
+    position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center; pointer-events: none;
+  }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.045em; line-height: .9;
+    font-size: clamp(60px, 14vw, 200px); white-space: pre-line;
+    background: linear-gradient(120deg, #eafcff, #4dd0ff 60%, #2b6bff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .title p {
+    margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #9fdcff; opacity: .85;
+  }
+  .hud {
+    position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .12em; color: #cfe9ff; opacity: .55;
+  }
+  .hud.tl { top: 18px; left: 20px; }
+  .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #4dd0ff; font-weight: 500; }
+  .grain {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+</style>
+</head>
+<body>
+  <canvas id="fld"></canvas>
+  <div class="title">
+    <h1>FLOW
+FIELD</h1>
+    <p>NOISE VECTOR STREAMS · CURSOR = VORTEX</p>
+  </div>
+  <p class="hud tl">SPECIMEN · <b>GENERATIVE</b></p>
+  <p class="hud br" id="spec">particles <b>1100</b> · field <b>0.0016</b> · turns <b>4</b></p>
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('fld');
+  var cx = cv.getContext('2d');
+  var W, H, DPR;
+  function resize() {
+    DPR = Math.min(1.5, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cx.fillStyle = '#04070c'; cx.fillRect(0, 0, W, H);
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  // 값 노이즈 (smoothstep 보간) — 벡터장의 소스
+  function hash(x, y) { var n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n); }
+  function vnoise(x, y) {
+    var xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+    var u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    var a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  }
+
+  var N = innerWidth < 640 ? 620 : 1100;
+  var ps = [];
+  function seed(p) { p.x = Math.random() * W; p.y = Math.random() * H; p.px = p.x; p.py = p.y; p.life = 40 + Math.random() * 120; }
+  for (var k = 0; k < N; k++) { var p = {}; seed(p); ps.push(p); }
+
+  var SCALE = 0.0016, SPEED = 1.5;
+  var mx = -1e9, my = -1e9, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mx = e.clientX; my = e.clientY; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mx = e.touches[0].clientX; my = e.touches[0].clientY; lastMove = performance.now(); }, { passive: true });
+
+  cx.lineWidth = 1;
+  function frame(t) {
+    // 트레일 감쇠 — 잔상 길이
+    cx.globalCompositeOperation = 'source-over';
+    cx.fillStyle = 'rgba(4,7,12,0.058)';
+    cx.fillRect(0, 0, W, H);
+    cx.globalCompositeOperation = 'lighter';
+
+    var tt = t * 0.00006;
+    var idle = t - lastMove > 2200;
+    var vx0 = idle ? W * (0.5 + 0.4 * Math.sin(t * 0.00035)) : mx;
+    var vy0 = idle ? H * (0.5 + 0.35 * Math.cos(t * 0.00048)) : my;
+    var VR = 170, VR2 = VR * VR;
+
+    for (var i = 0; i < ps.length; i++) {
+      var p = ps[i];
+      var ang = vnoise(p.x * SCALE + tt, p.y * SCALE - tt) * Math.PI * 4;
+      var ax = Math.cos(ang), ay = Math.sin(ang);
+
+      // 커서 소용돌이: 반경 안에서 접선 방향 성분을 더한다
+      var dx = p.x - vx0, dy = p.y - vy0, d2 = dx * dx + dy * dy;
+      if (d2 < VR2) {
+        var f = (1 - d2 / VR2);
+        ax += (-dy) * 0.00013 * f * 60;
+        ay += (dx) * 0.00013 * f * 60;
+      }
+      var sp = SPEED;
+      p.x += ax * sp; p.y += ay * sp;
+
+      var speed = Math.min(1, Math.hypot(p.x - p.px, p.y - p.py) / 2.4);
+      // 느리면 cyan, 빠르면 흰빛
+      var g = (176 + speed * 79) | 0, b = 255;
+      cx.strokeStyle = 'rgba(' + (77 + speed * 150 | 0) + ',' + g + ',' + b + ',' + (0.10 + speed * 0.32).toFixed(3) + ')';
+      cx.beginPath(); cx.moveTo(p.px, p.py); cx.lineTo(p.x, p.y); cx.stroke();
+      p.px = p.x; p.py = p.y;
+
+      if (--p.life < 0 || p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) seed(p);
+    }
+    if (!reduced) requestAnimationFrame(frame);
+  }
+
+  if (reduced) {
+    // 정적 폴백: 장을 한 번만 적분해 결을 남긴다
+    cx.globalCompositeOperation = 'lighter';
+    for (var s = 0; s < ps.length; s++) {
+      var q = ps[s];
+      cx.strokeStyle = 'rgba(77,176,255,0.16)';
+      for (var st = 0; st < 60; st++) {
+        var a2 = vnoise(q.x * SCALE, q.y * SCALE) * Math.PI * 4;
+        var nx = q.x + Math.cos(a2) * SPEED, ny = q.y + Math.sin(a2) * SPEED;
+        cx.beginPath(); cx.moveTo(q.x, q.y); cx.lineTo(nx, ny); cx.stroke();
+        q.x = nx; q.y = ny;
+        if (q.x < 0 || q.x > W || q.y < 0 || q.y > H) break;
+      }
+    }
+    document.body.style.cursor = 'auto';
+  } else {
+    requestAnimationFrame(frame);
+  }
+})();
+</script>
+</body>
+</html>

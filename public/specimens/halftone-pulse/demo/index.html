@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Halftone Pulse 재현 스니펫</title>
+<style>
+  /* 기법 연구: 도트 매트릭스 하프톤. 격자 셀의 값(노이즈 파동 + 커서 리플)을
+     도트 반지름과 밝기로 매핑한다. 인쇄 하프톤의 인터랙티브 버전. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #0c0a06;
+    font-family: Georgia, 'Times New Roman', serif;
+    cursor: crosshair;
+  }
+  canvas#dot { position: fixed; inset: 0; z-index: 1; }
+  .title {
+    position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center; pointer-events: none;
+  }
+  .title h1 {
+    font-weight: 400; font-style: italic; letter-spacing: -.01em; line-height: .92;
+    font-size: clamp(56px, 13vw, 180px); color: #fff2df; white-space: pre-line;
+    text-shadow: 0 4px 40px rgba(12, 10, 6, .6);
+  }
+  .title p {
+    margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #ff9d3c; opacity: .9;
+  }
+  .hud {
+    position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .12em; color: #ffd9ad; opacity: .55;
+  }
+  .hud.tl { top: 18px; left: 20px; }
+  .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #ff7a1a; font-weight: 500; }
+  .grain {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+</style>
+</head>
+<body>
+  <canvas id="dot"></canvas>
+  <div class="title">
+    <h1>Halftone</h1>
+    <p>DOT MATRIX WAVE · CLICK = RIPPLE</p>
+  </div>
+  <p class="hud tl">SPECIMEN · <b>GRID PLAY</b></p>
+  <p class="hud br" id="spec">gap <b>26px</b> · wave <b>2-axis sin</b> · ripple <b>c=520px/s</b></p>
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('dot');
+  var cx = cv.getContext('2d');
+  var W, H, DPR, GAP, cols, rows, ox, oy;
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    GAP = Math.max(18, Math.min(30, Math.round(W / 52)));
+    cols = Math.ceil(W / GAP) + 1;
+    rows = Math.ceil(H / GAP) + 1;
+    ox = (W - (cols - 1) * GAP) / 2;
+    oy = (H - (rows - 1) * GAP) / 2;
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  var mx = -1e9, my = -1e9, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mx = e.clientX; my = e.clientY; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mx = e.touches[0].clientX; my = e.touches[0].clientY; lastMove = performance.now(); }, { passive: true });
+
+  // 클릭 리플 — 유한 속도로 퍼지는 원형 파면
+  var ripples = [];
+  addEventListener('pointerdown', function (e) { ripples.push({ x: e.clientX, y: e.clientY, t0: performance.now() }); });
+
+  var R = 255, Gc = 122, Bc = 26; // #FF7A1A
+  function draw(t) {
+    cx.clearRect(0, 0, W, H);
+    var idle = t - lastMove > 2200;
+    var cxp = idle ? W * (0.5 + 0.36 * Math.sin(t * 0.0004)) : mx;
+    var cyp = idle ? H * (0.5 + 0.32 * Math.cos(t * 0.00052)) : my;
+    var tt = t * 0.001;
+
+    // 오래된 리플 정리
+    for (var r = ripples.length - 1; r >= 0; r--) if (t - ripples[r].t0 > 2600) ripples.splice(r, 1);
+
+    for (var iy = 0; iy < rows; iy++) {
+      for (var ix = 0; ix < cols; ix++) {
+        var x = ox + ix * GAP, y = oy + iy * GAP;
+        // 2축 사인 파동 (0..1)
+        var w = 0.5 + 0.5 * Math.sin(x * 0.018 + tt * 1.3) * Math.cos(y * 0.02 - tt);
+        // 커서 근접 벌지
+        var dxc = x - cxp, dyc = y - cyp, dc = Math.sqrt(dxc * dxc + dyc * dyc);
+        var bulge = Math.exp(-dc * dc / (2 * 150 * 150));
+        var v = w * 0.6 + bulge * 0.9;
+        // 클릭 리플 파면
+        for (var rp = 0; rp < ripples.length; rp++) {
+          var age = (t - ripples[rp].t0) / 1000;
+          var rad = age * 520;
+          var dd = Math.abs(Math.sqrt((x - ripples[rp].x) * (x - ripples[rp].x) + (y - ripples[rp].y) * (y - ripples[rp].y)) - rad);
+          v += Math.exp(-dd * dd / (2 * 26 * 26)) * Math.max(0, 1 - age / 2.6) * 1.1;
+        }
+        v = Math.max(0, Math.min(1, v));
+        var rad2 = 0.6 + v * (GAP * 0.52);
+        if (rad2 < 0.4) continue;
+        cx.fillStyle = 'rgba(' + R + ',' + ((Gc + v * 90) | 0) + ',' + ((Bc + v * 70) | 0) + ',' + (0.16 + v * 0.8).toFixed(3) + ')';
+        cx.beginPath(); cx.arc(x, y, rad2, 0, Math.PI * 2); cx.fill();
+      }
+    }
+    if (!reduced) requestAnimationFrame(draw);
+  }
+
+  if (reduced) { draw(0); document.body.style.cursor = 'auto'; }
+  else requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

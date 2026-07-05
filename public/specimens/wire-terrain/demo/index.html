@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Wire Terrain 재현 스니펫</title>
+<style>
+  /* 기법 연구: 노이즈 하이트맵 와이어프레임 지형. 3D 엔진 없이 캔버스 2D에
+     가짜 원근(행이 멀수록 위로/좁게)만으로 스크롤하는 등고 능선을 만든다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #07040e;
+    font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif;
+    cursor: crosshair;
+  }
+  canvas#ter { position: fixed; inset: 0; z-index: 1; }
+  .title {
+    position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column;
+    justify-content: flex-start; align-items: center; text-align: center; pointer-events: none;
+    padding-top: 11vh;
+  }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.045em; line-height: .9;
+    font-size: clamp(52px, 12vw, 168px); white-space: pre-line;
+    background: linear-gradient(120deg, #f3e9ff, #b06bff 55%, #7a2bff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .title p {
+    margin-top: 18px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #c7a6ff; opacity: .88;
+  }
+  .hud {
+    position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .12em; color: #d9c7ff; opacity: .55;
+  }
+  .hud.tl { top: 18px; left: 20px; }
+  .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #b06bff; font-weight: 500; }
+  .grain {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+</style>
+</head>
+<body>
+  <canvas id="ter"></canvas>
+  <div class="title">
+    <h1>WIRE
+TERRAIN</h1>
+    <p>NOISE HEIGHTMAP · FAKE-PERSPECTIVE MESH</p>
+  </div>
+  <p class="hud tl">SPECIMEN · <b>3D FLOAT</b></p>
+  <p class="hud br" id="spec">mesh <b>—</b> · scroll <b>z+</b> · cursor <b>tilt</b></p>
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('ter');
+  var cx = cv.getContext('2d');
+  var W, H, DPR, COLS, ROWS;
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    COLS = innerWidth < 640 ? 30 : 46;
+    ROWS = 30;
+    document.getElementById('spec').innerHTML =
+      'mesh <b>' + COLS + '×' + ROWS + '</b> · scroll <b>z+</b> · cursor <b>tilt</b>';
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  function hash(x, y) { var n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n); }
+  function vnoise(x, y) {
+    var xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+    var u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    var a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  }
+  function height(gx, gz) {
+    return (vnoise(gx * 0.18, gz * 0.18) * 0.7 + vnoise(gx * 0.42, gz * 0.42) * 0.3);
+  }
+
+  var tiltX = 0, tiltT = 0, mx = 0, my = 0, lastMove = -1e9;
+  addEventListener('mousemove', function (e) {
+    mx = e.clientX / innerWidth - 0.5; my = e.clientY / innerHeight - 0.5; lastMove = performance.now();
+  });
+
+  // 가짜 원근 투영: 행 인덱스 r(0=먼 뒤 .. 1=앞)에 따라 스케일/높이 결정
+  function project(gx, r, hgt, camTilt) {
+    var persp = 0.30 + r * r * 1.4;            // 앞쪽일수록 넓게
+    var sx = W * 0.5 + (gx - (COLS - 1) / 2) * (W / COLS) * persp + camTilt * (1 - r) * W * 0.16;
+    var horizon = H * 0.30;
+    var baseY = horizon + Math.pow(r, 1.35) * H * 0.62;
+    var sy = baseY - hgt * (60 + r * 150) - camTilt * 0 + my * (1 - r) * 40;
+    return [sx, sy];
+  }
+
+  function frame(t) {
+    cx.clearRect(0, 0, W, H);
+    cx.fillStyle = '#07040e'; cx.fillRect(0, 0, W, H);
+    var idle = t - lastMove > 2200;
+    var target = idle ? Math.sin(t * 0.0004) * 0.6 : mx * 1.4;
+    tiltX += (target - tiltX) * 0.05;
+    var scroll = t * 0.0009; // z축 전진
+
+    // 뒤에서 앞으로 그려 겹침 순서 유지
+    for (var iz = 0; iz < ROWS; iz++) {
+      var r = iz / (ROWS - 1);
+      var gz = iz + scroll * 10;
+      cx.beginPath();
+      for (var ix = 0; ix < COLS; ix++) {
+        var h = height(ix, gz);
+        var pt = project(ix, r, h, tiltX);
+        if (ix === 0) cx.moveTo(pt[0], pt[1]); else cx.lineTo(pt[0], pt[1]);
+      }
+      // 능선: 앞쪽일수록 밝고 두껍게
+      var a = 0.10 + r * 0.62;
+      cx.strokeStyle = 'rgba(176,107,255,' + a.toFixed(3) + ')';
+      cx.lineWidth = 0.6 + r * 1.5;
+      cx.stroke();
+      // 발광 능선 (앞쪽 몇 줄만)
+      if (r > 0.72) {
+        cx.strokeStyle = 'rgba(230,210,255,' + ((r - 0.72) * 0.9).toFixed(3) + ')';
+        cx.lineWidth = 0.8; cx.stroke();
+      }
+    }
+    // 세로 결(컬럼) 몇 개만 — 메시 느낌 보강
+    for (var jx = 0; jx < COLS; jx += 3) {
+      cx.beginPath();
+      for (var jz = 0; jz < ROWS; jz++) {
+        var rr = jz / (ROWS - 1);
+        var hh = height(jx, jz + scroll * 10);
+        var q = project(jx, rr, hh, tiltX);
+        if (jz === 0) cx.moveTo(q[0], q[1]); else cx.lineTo(q[0], q[1]);
+      }
+      cx.strokeStyle = 'rgba(122,60,200,0.14)'; cx.lineWidth = 0.6; cx.stroke();
+    }
+    if (!reduced) requestAnimationFrame(frame);
+  }
+
+  if (reduced) { frame(3000); document.body.style.cursor = 'auto'; }
+  else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
