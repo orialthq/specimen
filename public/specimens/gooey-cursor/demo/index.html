@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Gooey Cursor 재현 스니펫</title>
+<style>
+  /* 기법 연구: blur + contrast 임계값 트릭으로 만드는 메타볼 커서 트레일.
+     SVG goo 필터 대신 캔버스 한 장 + CSS filter로 같은 효과를 낸다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #170208;
+    font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif;
+    cursor: none;
+  }
+  canvas#goo {
+    position: fixed; inset: 0; z-index: 1;
+    /* 메타볼의 핵심: 블러로 뭉개고 대비로 다시 이진화 */
+    filter: blur(22px) contrast(26);
+  }
+  .title {
+    position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center;
+    pointer-events: none; mix-blend-mode: difference;
+  }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.04em; line-height: .92;
+    font-size: clamp(60px, 14vw, 190px); color: #ffd3e0; white-space: pre-line;
+  }
+  .title p {
+    margin-top: 22px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .3em; color: #ffd3e0; opacity: .8;
+  }
+  .hud {
+    position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .12em; color: #ffd3e0; opacity: .6;
+  }
+  .hud.tl { top: 18px; left: 20px; }
+  .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #ff3d6e; font-weight: 500; }
+  .grain {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .07;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+</style>
+</head>
+<body>
+  <canvas id="goo"></canvas>
+  <div class="title">
+    <h1>GOOEY
+CURSOR</h1>
+    <p>MOVE · CLICK TO BURST</p>
+  </div>
+  <p class="hud tl">SPECIMEN · <b>CURSOR FX</b></p>
+  <p class="hud br">trail <b>14</b> · k <b>0.22→0.30</b> · blur <b>22px</b> · contrast <b>2600%</b></p>
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('goo');
+  var cx = cv.getContext('2d');
+  var W, H, DPR;
+  function resize() {
+    DPR = Math.min(1.5, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  // 스프링 체인 트레일 — 머리는 포인터를, 몸통은 앞마디를 따른다
+  var N = 14;
+  var chain = [];
+  for (var k = 0; k < N; k++) chain.push({ x: W / 2, y: H / 2 });
+  var R0 = Math.min(52, W * 0.045);
+
+  // 자율 유영 궤도(리사주) — 입력이 없을 때의 앰비언트 모션
+  var tx = W / 2, ty = H / 2, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { tx = e.clientX; ty = e.clientY; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { tx = e.touches[0].clientX; ty = e.touches[0].clientY; lastMove = performance.now(); }, { passive: true });
+
+  // 클릭 버스트 입자
+  var burst = [];
+  addEventListener('pointerdown', function (e) {
+    for (var b = 0; b < 8; b++) {
+      var a = (b / 8) * Math.PI * 2 + Math.random() * 0.5;
+      var v = 4.5 + Math.random() * 3.5;
+      burst.push({ x: e.clientX, y: e.clientY, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: 16 + Math.random() * 12, life: 1 });
+    }
+  });
+
+  // 배경에 떠다니는 앰비언트 블롭 3개
+  var orbs = [
+    { ax: 0.26, ay: 0.32, rx: 0.16, ry: 0.12, s: 0.00042, r: 60, ph: 0 },
+    { ax: 0.72, ay: 0.62, rx: 0.13, ry: 0.17, s: 0.00031, r: 74, ph: 2.1 },
+    { ax: 0.55, ay: 0.28, rx: 0.19, ry: 0.10, s: 0.00055, r: 46, ph: 4.2 }
+  ];
+
+  function blob(x, y, r, tone) {
+    var g = cx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, tone);
+    g.addColorStop(1, 'rgba(255,61,110,0)');
+    cx.fillStyle = g;
+    cx.beginPath();
+    cx.arc(x, y, r, 0, Math.PI * 2);
+    cx.fill();
+  }
+
+  function loop(t) {
+    // 임계값 트릭은 불투명 배경 위에서만 깨끗하게 잘린다
+    cx.fillStyle = '#170208';
+    cx.fillRect(0, 0, W, H);
+
+    var idle = t - lastMove > 2000;
+    var hx = idle ? W * (0.5 + 0.34 * Math.sin(t * 0.00047)) : tx;
+    var hy = idle ? H * (0.5 + 0.30 * Math.sin(t * 0.00071 + 1.3)) : ty;
+
+    chain[0].x += (hx - chain[0].x) * 0.30;
+    chain[0].y += (hy - chain[0].y) * 0.30;
+    for (var k2 = 1; k2 < N; k2++) {
+      var kk = 0.30 - (k2 / N) * 0.08; // 꼬리로 갈수록 느슨한 스프링
+      chain[k2].x += (chain[k2 - 1].x - chain[k2].x) * kk;
+      chain[k2].y += (chain[k2 - 1].y - chain[k2].y) * kk;
+    }
+
+    for (var o = 0; o < orbs.length; o++) {
+      var ob = orbs[o];
+      var ox = W * ob.ax + W * ob.rx * Math.sin(t * ob.s + ob.ph);
+      var oy = H * ob.ay + H * ob.ry * Math.cos(t * ob.s * 1.31 + ob.ph);
+      blob(ox, oy, ob.r * (1 + 0.12 * Math.sin(t * 0.001 + ob.ph)), 'rgba(255,61,110,.95)');
+    }
+
+    for (var k3 = 0; k3 < N; k3++) {
+      var p = chain[k3];
+      var r = R0 * (1 - k3 / (N + 3)) * (1 + 0.08 * Math.sin(t * 0.004 + k3));
+      blob(p.x, p.y, r, k3 === 0 ? 'rgba(255,211,224,.98)' : 'rgba(255,61,110,.95)');
+    }
+
+    for (var b2 = burst.length - 1; b2 >= 0; b2--) {
+      var q = burst[b2];
+      q.x += q.vx; q.y += q.vy; q.vx *= 0.94; q.vy *= 0.94; q.life -= 0.018;
+      if (q.life <= 0) { burst.splice(b2, 1); continue; }
+      blob(q.x, q.y, q.r * q.life, 'rgba(255,61,110,' + (0.95 * q.life).toFixed(2) + ')');
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  if (reduced) {
+    // 정적 폴백: 고정 블롭 구성만 그린다
+    cx.fillStyle = '#170208'; cx.fillRect(0, 0, W, H);
+    blob(W * 0.5, H * 0.52, 70, 'rgba(255,211,224,.98)');
+    blob(W * 0.42, H * 0.55, 52, 'rgba(255,61,110,.95)');
+    blob(W * 0.6, H * 0.47, 44, 'rgba(255,61,110,.95)');
+    blob(W * 0.28, H * 0.34, 60, 'rgba(255,61,110,.95)');
+    blob(W * 0.74, H * 0.64, 74, 'rgba(255,61,110,.95)');
+    document.body.style.cursor = 'auto';
+  } else {
+    requestAnimationFrame(loop);
+  }
+})();
+</script>
+</body>
+</html>

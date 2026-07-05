@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Kinetic Type Wave 재현 스니펫</title>
+<style>
+  /* 기법 연구: 글리프 단위 변형 웨이브 마퀴 — 폰트 없이 transform만으로
+     가변 폰트 느낌을 낸다. 커서 위치가 웨이브의 진앙이 된다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #101014;
+    color: #d8ff3d;
+    font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    cursor: crosshair;
+  }
+  .stage {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    justify-content: center; gap: 0; overflow: hidden;
+  }
+  .row {
+    position: relative; white-space: nowrap; overflow: visible;
+    font-weight: 900; letter-spacing: -0.02em;
+    font-size: clamp(44px, 13.5vh, 150px); line-height: 1.04;
+    user-select: none;
+  }
+  .trk { display: inline-block; will-change: transform; }
+  .g { display: inline-block; will-change: transform; transform-origin: 50% 100%; }
+  .row.stroke { color: transparent; -webkit-text-stroke: 1.5px #ededf2; }
+  .row.invert { background: #d8ff3d; color: #101014; }
+  .sep { opacity: .45; padding: 0 .18em; }
+
+  .hud {
+    position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .12em; color: #ededf2; opacity: .6;
+  }
+  .hud.tl { top: 18px; left: 20px; }
+  .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #d8ff3d; font-weight: 500; }
+  .grain {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  @media (prefers-reduced-motion: reduce) { .g, .trk { transform: none !important; } }
+</style>
+</head>
+<body>
+  <div class="stage" id="stage"></div>
+  <p class="hud tl">SPECIMEN · <b>KINETIC TYPE WAVE</b></p>
+  <p class="hud br" id="spec">freq <b>0.011</b> · amp <b>0.18→1.05</b> · v <b>—</b></p>
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var stage = document.getElementById('stage');
+  var spec = document.getElementById('spec');
+  var PHRASE = ['SPECIMEN', 'KINETIC', 'TYPE', 'MOTION', 'ARCHIVE', 'WAVE'];
+  var ROWS = 6;
+  var rows = [];
+
+  function buildRow(r) {
+    var div = document.createElement('div');
+    div.className = 'row' + (r === Math.floor(ROWS / 2) ? ' invert' : r % 2 ? ' stroke' : '');
+    var trk = document.createElement('span');
+    trk.className = 'trk';
+    div.appendChild(trk);
+    stage.appendChild(div);
+
+    // 화면 폭 이상이 될 때까지 단어를 채우고, 심리스 랩을 위해 전체를 2배로 복제
+    var words = [];
+    var wi = r % PHRASE.length;
+    function fill() {
+      trk.innerHTML = '';
+      words.forEach(function (w) {
+        for (var c = 0; c < w.length; c++) {
+          var s = document.createElement('span');
+          s.className = 'g';
+          s.textContent = w[c];
+          trk.appendChild(s);
+        }
+        var sep = document.createElement('span');
+        sep.className = 'g sep';
+        sep.textContent = '✳';
+        trk.appendChild(sep);
+      });
+    }
+    do {
+      words.push(PHRASE[wi % PHRASE.length]); wi++;
+      fill();
+    } while (trk.offsetWidth < innerWidth + 200);
+    var half = trk.offsetWidth;
+    trk.innerHTML += trk.innerHTML; // ×2 복제
+
+    var glyphs = Array.prototype.slice.call(trk.children).map(function (el) {
+      return { el: el, left: el.offsetLeft + el.offsetWidth / 2 };
+    });
+    return {
+      trk: trk, half: half, glyphs: glyphs,
+      dir: r % 2 ? 1 : -1,
+      speed: 60 + (r % 3) * 34, // px/s
+      off: Math.random() * half
+    };
+  }
+
+  for (var r = 0; r < ROWS; r++) rows.push(buildRow(r));
+
+  var mx = innerWidth / 2, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mx = e.clientX; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mx = e.touches[0].clientX; lastMove = performance.now(); }, { passive: true });
+
+  addEventListener('resize', function () {
+    stage.innerHTML = ''; rows = [];
+    for (var r = 0; r < ROWS; r++) rows.push(buildRow(r));
+  });
+
+  var FREQ = 0.011, SIGMA = 190, prev = performance.now();
+  function loop(t) {
+    var dt = Math.min(0.05, (t - prev) / 1000); prev = t;
+    // 2초간 입력 없으면 진앙이 스스로 유영한다
+    var idle = t - lastMove > 2000;
+    var ex = idle ? innerWidth * (0.5 + 0.42 * Math.sin(t / 1700)) : mx;
+    var breathe = 0.18 + 0.06 * Math.sin(t / 1100);
+
+    for (var k = 0; k < rows.length; k++) {
+      var row = rows[k];
+      row.off = (row.off + row.speed * dt) % row.half;
+      var x = row.dir > 0 ? row.off - row.half : -row.off;
+      row.trk.style.transform = 'translate3d(' + x + 'px,0,0)';
+      for (var g = 0; g < row.glyphs.length; g++) {
+        var gl = row.glyphs[g];
+        var sx = gl.left + x;
+        if (sx < -140 || sx > innerWidth + 140) { gl.el.style.transform = ''; continue; }
+        var d = sx - ex;
+        var focus = Math.exp(-(d * d) / (2 * SIGMA * SIGMA)); // 진앙 가우시안
+        var amp = breathe + focus * 0.87;
+        var ph = sx * FREQ - row.dir * t * 0.004 + k * 0.9;
+        var ty = Math.sin(ph) * amp * 22;
+        var sy = 1 + Math.max(0, Math.sin(ph + 0.7)) * amp * 0.55;
+        gl.el.style.transform = 'translateY(' + ty + 'px) scaleY(' + sy + ')';
+      }
+    }
+    spec.innerHTML = 'freq <b>0.011</b> · amp <b>0.18→1.05</b> · v <b>60–128px/s</b>' + (idle ? ' · <b>idle</b>' : '');
+    if (!reduced) requestAnimationFrame(loop);
+  }
+  if (!reduced) requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

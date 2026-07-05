@@ -315,6 +315,14 @@ THE MOTION</h2>
   setScene(i);
   void track.offsetHeight;
   if (!reduced) track.classList.remove('noanim');
+
+  // ?auto=1 — 임베드 앰비언트 모드: 씬 자동 순환
+  if (new URLSearchParams(location.search).get('auto') && !reduced) {
+    document.querySelector('.hint').style.display = 'none';
+    setInterval(function () {
+      if (!document.hidden) setScene((i + 1) % n);
+    }, 3200);
+  }
 })();
 </script>
 </body>

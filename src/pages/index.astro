@@ -3,11 +3,16 @@ import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
 
 const specimens = await getCollection('specimens');
-const featured = specimens.find((s) => s.data.featured);
+// 임시 정렬: featured 우선, 이후 slug — M2에서 채집일 역순으로 교체
+const ordered = [...specimens].sort(
+  (a, b) => Number(b.data.featured) - Number(a.data.featured) || a.id.localeCompare(b.id)
+);
 
 // base('/specimen') 하위 정적 경로 결합 — BASE_URL 트레일링 슬래시 유무 흡수
 const withBase = (path: string) =>
   `${import.meta.env.BASE_URL.replace(/\/$/, '')}${path}`;
+
+const specimenNo = (idx: number) => `No.${String(idx + 1).padStart(3, '0')}`;
 ---
 
 <Base>
@@ -20,46 +25,77 @@ const withBase = (path: string) =>
       </p>
     </header>
 
-    {
-      featured && featured.data.snippet && (
-        <section class="border-b border-line py-12">
-          <div class="flex flex-wrap items-baseline justify-between gap-2 pb-4">
-            <p class="font-mono text-sm text-muted">
-              <span class="text-accent">No.001</span> · {featured.data.title} · 채집{' '}
-              {featured.data.collectedAt.toISOString().slice(0, 10)}
-            </p>
-            <p class="font-mono text-xs text-muted">
-              <a
-                class="text-accent hover:underline"
-                href={withBase(featured.data.snippet)}
-                target="_blank"
-                rel="noopener"
-              >
-                전체 화면 ↗
-              </a>
-              {' · '}
-              <a class="hover:underline" href={featured.data.url} target="_blank" rel="noopener">
-                원본 ↗
-              </a>
-            </p>
-          </div>
-          <iframe
-            src={withBase(featured.data.snippet)}
-            title={`${featured.data.title} — 재현 스니펫`}
-            loading="lazy"
-            class="aspect-video w-full border border-line"
-          ></iframe>
-          <p class="pt-3 font-mono text-xs text-muted">
-            재현 스니펫 — 원본의 코드가 아니라 기법(carry backdrop)을 추출한 자체 재현물. 스크롤 ·
-            방향키 · 스와이프로 조작.
-          </p>
-        </section>
-      )
-    }
-
     <section class="py-12">
-      <p class="font-mono text-sm text-muted">
-        채집된 표본 <span class="text-accent">{specimens.length}</span>건 — 표본 서랍은 준비 중.
+      <div class="grid gap-8 md:grid-cols-2">
+        {
+          ordered.map(
+            (s, idx) =>
+              s.data.snippet && (
+                <article class="border border-line">
+                  {/* 그리드에선 앰비언트 모션만(포인터 차단) — 클릭 시 전체 화면 인터랙티브 */}
+                  <a
+                    href={withBase(s.data.snippet)}
+                    target="_blank"
+                    rel="noopener"
+                    class="block"
+                    aria-label={`${s.data.title} — 전체 화면으로 열기`}
+                  >
+                    <iframe
+                      src={`${withBase(s.data.snippet)}?auto=1`}
+                      title={`${s.data.title} — 재현 스니펫`}
+                      loading="lazy"
+                      tabindex="-1"
+                      class="pointer-events-none aspect-video w-full"
+                    ></iframe>
+                  </a>
+                  <div class="border-t border-line p-4">
+                    <div class="flex items-baseline justify-between gap-2">
+                      <p class="font-mono text-xs text-muted">
+                        <span class="text-accent">{specimenNo(idx)}</span> · 채집{' '}
+                        {s.data.collectedAt.toISOString().slice(0, 10)} · {s.data.curator}
+                      </p>
+                      <div class="flex gap-1" aria-label="추출 팔레트">
+                        {s.data.palette.map((hex) => (
+                          <span
+                            class="inline-block h-3 w-5 border border-line"
+                            style={`background:${hex}`}
+                            title={hex}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <h2 class="mt-2 font-display text-2xl text-cream">{s.data.title}</h2>
+                    <p class="mt-2 font-mono text-xs text-muted">
+                      {s.data.interaction.join(' · ')}
+                    </p>
+                    <p class="mt-3 font-mono text-xs">
+                      <a
+                        class="text-accent hover:underline"
+                        href={withBase(s.data.snippet)}
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        전체 화면 ↗
+                      </a>
+                      <span class="text-muted"> · </span>
+                      <a
+                        class="text-muted hover:underline"
+                        href={s.data.url}
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        원본 ↗
+                      </a>
+                    </p>
+                  </div>
+                </article>
+              )
+          )
+        }
+      </div>
+      <p class="pt-8 font-mono text-xs text-muted">
+        채집된 표본 <span class="text-accent">{specimens.length}</span>건 · 재현 스니펫은 원본의
+        코드가 아니라 기법을 추출한 자체 재현물 · 해부 페이지는 준비 중.
       </p>
     </section>
   </main>
