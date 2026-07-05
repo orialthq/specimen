@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— ASCII Field 재현 스니펫</title>
+<style>
+  /* 기법 연구: 노이즈 스칼라장을 글리프 밀도 램프(' .·:;+=xX#@')로 렌더링.
+     픽셀 대신 문자가 해상도 단위가 된다. 커서는 국소 게인을 올리는 렌즈. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #030a05;
+    font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif;
+    cursor: crosshair;
+  }
+  canvas#txt { position: fixed; inset: 0; z-index: 1; }
+  .title {
+    position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center; pointer-events: none;
+  }
+  .title h1 {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-weight: 700; letter-spacing: .04em; line-height: .95;
+    font-size: clamp(48px, 11vw, 150px); white-space: pre-line;
+    background: linear-gradient(120deg, #eafff0, #33ff66 60%, #0d9e3c);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 60px rgba(51, 255, 102, .18);
+  }
+  .title p {
+    margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #7dffa3; opacity: .85;
+  }
+  .hud {
+    position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .12em; color: #bfffd2; opacity: .55;
+  }
+  .hud.tl { top: 18px; left: 20px; }
+  .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #33ff66; font-weight: 500; }
+  .grain {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+</style>
+</head>
+<body>
+  <canvas id="txt"></canvas>
+  <div class="title">
+    <h1>ASCII
+FIELD</h1>
+    <p>GLYPH DENSITY RAMP · CURSOR = LENS</p>
+  </div>
+  <p class="hud tl">SPECIMEN · <b>TYPE RENDER</b></p>
+  <p class="hud br" id="spec">ramp <b>11 steps</b> · cell <b>—</b> · glyphs <b>—</b></p>
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('txt');
+  var cx = cv.getContext('2d');
+  var RAMP = ' .·:;+=xX#@';
+  var W, H, DPR, CELL, cols, rows;
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    CELL = innerWidth < 640 ? 18 : 16;
+    cols = Math.ceil(W / CELL); rows = Math.ceil(H / CELL);
+    cx.font = (CELL - 3) + 'px ui-monospace, Menlo, monospace';
+    cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    document.getElementById('spec').innerHTML =
+      'ramp <b>11 steps</b> · cell <b>' + CELL + 'px</b> · glyphs <b>' + cols * rows + '</b>';
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  function hash(x, y) { var n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n); }
+  function vnoise(x, y) {
+    var xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+    var u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    var a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  }
+
+  var mx = -1e9, my = -1e9, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mx = e.clientX; my = e.clientY; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mx = e.touches[0].clientX; my = e.touches[0].clientY; lastMove = performance.now(); }, { passive: true });
+
+  function draw(t) {
+    cx.fillStyle = '#030a05';
+    cx.fillRect(0, 0, W, H);
+    var tt = t * 0.00019;
+    var idle = t - lastMove > 2200;
+    var lx = idle ? W * (0.5 + 0.38 * Math.sin(t * 0.00038)) : mx;
+    var ly = idle ? H * (0.5 + 0.34 * Math.cos(t * 0.00051)) : my;
+
+    for (var iy = 0; iy < rows; iy++) {
+      for (var ix = 0; ix < cols; ix++) {
+        var x = ix * CELL + CELL / 2, y = iy * CELL + CELL / 2;
+        // 2옥타브 노이즈 — 흐르는 스칼라장
+        var v = vnoise(ix * 0.09 + tt * 2, iy * 0.11 - tt) * 0.72 +
+                vnoise(ix * 0.23 - tt, iy * 0.27 + tt * 1.4) * 0.28;
+        // 커서 렌즈: 국소 게인
+        var dx = x - lx, dy = y - ly;
+        v += Math.exp(-(dx * dx + dy * dy) / (2 * 130 * 130)) * 0.55;
+        v = Math.max(0, Math.min(0.999, v));
+        var gi = (v * RAMP.length) | 0;
+        if (gi === 0) continue; // 공백은 그리지 않는다
+        // 밝을수록 백열로 리프트
+        var g = 255, r = (51 + v * 150) | 0, b2 = (102 + v * 90) | 0;
+        cx.fillStyle = 'rgba(' + r + ',' + g + ',' + b2 + ',' + (0.10 + v * 0.85).toFixed(3) + ')';
+        cx.fillText(RAMP[gi], x, y);
+      }
+    }
+    if (!reduced) requestAnimationFrame(draw);
+  }
+
+  if (reduced) { draw(1400); document.body.style.cursor = 'auto'; }
+  else requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

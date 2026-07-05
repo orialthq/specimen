@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Glitch Slice 재현 스니펫</title>
+<style>
+  /* 기법 연구: RGB 채널 분리 + 수평 슬라이스 변위. 오프스크린 캔버스에 타이포를
+     구운 뒤, 버스트 동안 띠 단위로 찢어 채널별 오프셋으로 다시 합성한다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #0a0a0c;
+    font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif;
+    cursor: crosshair;
+  }
+  canvas#glz { position: fixed; inset: 0; z-index: 1; }
+  /* CRT 스캔라인 + 비네트 */
+  .scan {
+    position: fixed; inset: 0; z-index: 3; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px);
+  }
+  .vig {
+    position: fixed; inset: 0; z-index: 3; pointer-events: none;
+    background: radial-gradient(90% 90% at 50% 50%, transparent 55%, rgba(0,0,0,.5));
+  }
+  .sub {
+    position: fixed; left: 50%; top: 66%; transform: translateX(-50%);
+    z-index: 4; pointer-events: none;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #9aa3b2; opacity: .85;
+    white-space: nowrap;
+  }
+  .hud {
+    position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .12em; color: #c9d2de; opacity: .55;
+  }
+  .hud.tl { top: 18px; left: 20px; }
+  .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #ff0044; font-weight: 500; }
+  .hud b.c { color: #00e5ff; }
+  .grain {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+</style>
+</head>
+<body>
+  <canvas id="glz"></canvas>
+  <p class="sub">RGB SPLIT · SLICE DISPLACE · CLICK = BURST</p>
+  <div class="scan"></div>
+  <div class="vig"></div>
+  <p class="hud tl">SPECIMEN · <b>GLITCH</b></p>
+  <p class="hud br">split <b>±14px</b><span style="opacity:.6"> / </span><b class="c">±10px</b> · slices <b>18</b> · burst <b>420ms</b></p>
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('glz');
+  var cx = cv.getContext('2d');
+  var off = document.createElement('canvas');
+  var ox = off.getContext('2d');
+  var W, H, DPR;
+
+  var chR, chC, chW; // 채널별 사전 틴트 캔버스
+
+  function paintSource() {
+    // 오프스크린에 순백 타이포를 굽고, 채널별 틴트 사본을 만든다
+    ox.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ox.clearRect(0, 0, W, H);
+    ox.fillStyle = '#f5f5f7';
+    ox.textAlign = 'center';
+    var fs = Math.min(W * 0.20, H * 0.38);
+    ox.font = '900 ' + fs + 'px Pretendard, system-ui, sans-serif';
+    ox.textBaseline = 'alphabetic';
+    ox.fillText('GLITCH', W / 2, H * 0.48 + fs * 0.36);
+    chR = tinted('rgb(255,0,68)');
+    chC = tinted('rgb(0,229,255)');
+    chW = tinted('rgb(235,238,244)');
+  }
+  function tinted(color) {
+    var c = document.createElement('canvas');
+    c.width = off.width; c.height = off.height;
+    var g = c.getContext('2d');
+    g.drawImage(off, 0, 0);
+    g.globalCompositeOperation = 'source-in'; // 글리프 알파에만 색을 입힌다
+    g.fillStyle = color;
+    g.fillRect(0, 0, c.width, c.height);
+    return c;
+  }
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    off.width = W * DPR; off.height = H * DPR;
+    paintSource();
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  // 버스트 스케줄: 주기 자동 발화 + 클릭 즉발
+  var burstT0 = -1e9, BURST = 420;
+  addEventListener('pointerdown', function () { burstT0 = performance.now(); });
+
+  function rnd(seed) { var n = Math.sin(seed * 127.1) * 43758.5453; return n - Math.floor(n); }
+
+  function drawChannel(src, dx, dy, slice, t, seedBase) {
+    if (slice > 0.001) {
+      // 수평 띠 18개 — 띠마다 다른 수평 변위
+      var SL = 18, sh = H / SL;
+      for (var s = 0; s < SL; s++) {
+        var jx = (rnd(seedBase + s * 7.3 + ((t / 90) | 0)) - 0.5) * 2 * slice * 46;
+        cx.drawImage(src,
+          0, s * sh * DPR, W * DPR, sh * DPR,
+          dx + jx, dy + s * sh, W, sh);
+      }
+    } else {
+      cx.drawImage(src, 0, 0, W * DPR, H * DPR, dx, dy, W, H);
+    }
+  }
+
+  var seed = 0;
+  function frame(t) {
+    // 자동 버스트: 2.6s 주기
+    if (t - burstT0 > 2600) burstT0 = t;
+    var age = t - burstT0;
+    var k = age < BURST ? 1 - age / BURST : 0; // 버스트 강도 1→0
+    if (k > 0 && (t / 60 | 0) !== seed) seed = (t / 60 | 0);
+
+    cx.globalCompositeOperation = 'source-over';
+    cx.fillStyle = '#0a0a0c'; cx.fillRect(0, 0, W, H);
+
+    // 상시 미세 진동 + 버스트 시 증폭
+    var idleSplit = 2.2 + 1.4 * Math.sin(t * 0.003);
+    var split = idleSplit + k * 14;
+    var jitterY = k > 0 ? (rnd(seed * 3.1) - 0.5) * k * 12 : 0;
+
+    // 가산 합성: R + C가 겹치는 본체는 백열로, 어긋난 가장자리만 채널색이 남는다
+    cx.globalCompositeOperation = 'lighter';
+    drawChannel(chR, -split, jitterY, k, t, 11);
+    drawChannel(chC, split * 0.72, -jitterY * 0.6, k, t, 37);
+    drawChannel(chW, 0, 0, k * 0.4, t, 71);
+
+    if (!reduced) requestAnimationFrame(frame);
+  }
+
+  if (reduced) {
+    // 정적 폴백: 고정 스플릿 한 프레임
+    cx.fillStyle = '#0a0a0c'; cx.fillRect(0, 0, W, H);
+    cx.globalCompositeOperation = 'lighter';
+    drawChannel(chR, -5, 0, 0, 0, 11);
+    drawChannel(chC, 5, 0, 0, 0, 37);
+    drawChannel(chW, 0, 0, 0, 0, 71);
+    document.body.style.cursor = 'auto';
+  } else {
+    requestAnimationFrame(frame);
+  }
+})();
+</script>
+</body>
+</html>

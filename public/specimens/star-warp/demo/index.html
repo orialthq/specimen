@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Star Warp 재현 스니펫</title>
+<style>
+  /* 기법 연구: z-원근 나눗셈 하나로 만드는 스타필드 워프.
+     sx = x/z — 3D 투영의 최소 단위. 마우스가 조향, 클릭이 하이퍼스페이스. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #020210;
+    font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif;
+    cursor: crosshair;
+  }
+  canvas#st { position: fixed; inset: 0; z-index: 1; }
+  .title {
+    position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center; pointer-events: none;
+  }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.04em; line-height: .9;
+    font-size: clamp(56px, 13vw, 190px); white-space: pre-line;
+    background: linear-gradient(120deg, #f0f4ff, #9fb4ff 55%, #4f6bff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .title p {
+    margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #9fb4ff; opacity: .85;
+  }
+  .hud {
+    position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .12em; color: #ccd6ff; opacity: .55;
+  }
+  .hud.tl { top: 18px; left: 20px; }
+  .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #6e8bff; font-weight: 500; }
+  .grain {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+</style>
+</head>
+<body>
+  <canvas id="st"></canvas>
+  <div class="title">
+    <h1>STAR
+WARP</h1>
+    <p>Z-DIVIDE PROJECTION · HOLD = HYPERSPACE</p>
+  </div>
+  <p class="hud tl">SPECIMEN · <b>FAKE 3D</b></p>
+  <p class="hud br" id="spec">stars <b>—</b> · v <b>1×</b> · proj <b>x/z</b></p>
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('st');
+  var cx = cv.getContext('2d');
+  var W, H, DPR, N;
+  var stars = [];
+  function spawn(s) {
+    s.x = (Math.random() - 0.5) * 2;  // 정규화 공간 [-1,1]
+    s.y = (Math.random() - 0.5) * 2;
+    s.z = 0.12 + Math.random() * 0.88;
+    s.pz = s.z;
+    return s;
+  }
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cx.fillStyle = '#020210'; cx.fillRect(0, 0, W, H);
+    N = innerWidth < 640 ? 320 : 560;
+    while (stars.length < N) stars.push(spawn({}));
+    stars.length = N;
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  // 조향: 마우스가 소실점을 끌고 다닌다
+  var mx = 0, my = 0, smx = 0, smy = 0, lastMove = -1e9;
+  addEventListener('mousemove', function (e) {
+    mx = (e.clientX / W - 0.5) * 2; my = (e.clientY / H - 0.5) * 2; lastMove = performance.now();
+  });
+  // 누르는 동안 하이퍼스페이스
+  var thrust = 0, down = false;
+  addEventListener('pointerdown', function () { down = true; });
+  addEventListener('pointerup', function () { down = false; });
+  addEventListener('pointercancel', function () { down = false; });
+
+  var BASE = 0.0042;
+  function frame(t) {
+    // 트레일: 얇은 감쇠 — 워프 시 스트릭이 길어진다
+    cx.fillStyle = 'rgba(2,2,16,' + (down ? 0.22 : 0.42) + ')';
+    cx.fillRect(0, 0, W, H);
+
+    thrust += ((down ? 1 : 0) - thrust) * 0.06;
+    var idle = t - lastMove > 2400;
+    var tx = idle ? Math.sin(t * 0.00031) * 0.5 : mx;
+    var ty = idle ? Math.cos(t * 0.00042) * 0.4 : my;
+    smx += (tx - smx) * 0.04; smy += (ty - smy) * 0.04;
+
+    var v = BASE * (1 + thrust * 9);
+    var cxp = W / 2 - smx * W * 0.22;
+    var cyp = H / 2 - smy * H * 0.22;
+    var F = Math.min(W, H) * 0.9; // 초점거리
+
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      s.pz = s.z;
+      s.z -= v * (0.4 + s.z); // 가까울수록 빠르게 — 가속 원근
+      if (s.z <= 0.04) { spawn(s); s.pz = s.z; continue; }
+
+      var sx = cxp + (s.x / s.z) * F * 0.5;
+      var sy = cyp + (s.y / s.z) * F * 0.5;
+      if (sx < -40 || sx > W + 40 || sy < -40 || sy > H + 40) { spawn(s); continue; }
+      var px = cxp + (s.x / s.pz) * F * 0.5;
+      var py = cyp + (s.y / s.pz) * F * 0.5;
+
+      var depth = 1 - s.z; // 0 멀다 → 1 가깝다
+      var a = 0.25 + depth * 0.75;
+      // 깊이로 색온도: 멀면 인디고, 가까우면 백색
+      var rr = (110 + depth * 145) | 0, gg = (130 + depth * 125) | 0;
+      cx.strokeStyle = 'rgba(' + rr + ',' + gg + ',255,' + a.toFixed(3) + ')';
+      cx.lineWidth = 0.5 + depth * 1.9;
+      cx.beginPath(); cx.moveTo(px, py); cx.lineTo(sx, sy); cx.stroke();
+    }
+    document.getElementById('spec').innerHTML =
+      'stars <b>' + N + '</b> · v <b>' + (1 + thrust * 9).toFixed(1) + '×</b> · proj <b>x/z</b>';
+    if (!reduced) requestAnimationFrame(frame);
+  }
+
+  if (reduced) {
+    // 정적 폴백: 스트릭 없는 점 필드
+    cx.fillStyle = '#020210'; cx.fillRect(0, 0, W, H);
+    for (var k = 0; k < stars.length; k++) {
+      var q = stars[k];
+      var qx = W / 2 + (q.x / q.z) * Math.min(W, H) * 0.45;
+      var qy = H / 2 + (q.y / q.z) * Math.min(W, H) * 0.45;
+      if (qx < 0 || qx > W || qy < 0 || qy > H) continue;
+      var dep = 1 - q.z;
+      cx.fillStyle = 'rgba(200,215,255,' + (0.3 + dep * 0.7).toFixed(2) + ')';
+      cx.beginPath(); cx.arc(qx, qy, 0.4 + dep * 1.6, 0, Math.PI * 2); cx.fill();
+    }
+    document.body.style.cursor = 'auto';
+  } else {
+    requestAnimationFrame(frame);
+  }
+})();
+</script>
+</body>
+</html>

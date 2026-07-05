@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Plexus 재현 스니펫</title>
+<style>
+  /* 기법 연구: 근접 네트워크(plexus). 표류하는 노드들 사이에 거리 임계값 이하일 때만
+     엣지를 긋는다 — 토폴로지가 매 프레임 다시 태어난다. 유일한 모노크롬 에튀드. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #0a0c10;
+    font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif;
+    cursor: crosshair;
+  }
+  canvas#net { position: fixed; inset: 0; z-index: 1; }
+  .title {
+    position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center; pointer-events: none;
+  }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.04em; line-height: .9;
+    font-size: clamp(60px, 14vw, 200px);
+    background: linear-gradient(120deg, #ffffff, #c8d0dc 55%, #6d7686);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .title p {
+    margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #aeb8c6; opacity: .85;
+  }
+  .hud {
+    position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .12em; color: #d5dbe4; opacity: .55;
+  }
+  .hud.tl { top: 18px; left: 20px; }
+  .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #f2f5fa; font-weight: 500; }
+  .grain {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+</style>
+</head>
+<body>
+  <canvas id="net"></canvas>
+  <div class="title">
+    <h1>PLEXUS</h1>
+    <p>PROXIMITY NETWORK · CLICK = REPULSE</p>
+  </div>
+  <p class="hud tl">SPECIMEN · <b>MONOCHROME</b></p>
+  <p class="hud br" id="spec">nodes <b>—</b> · link <b>130px</b> · gravity <b>r200</b></p>
+  <div class="grain"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('net');
+  var cx = cv.getContext('2d');
+  var W, H, DPR, N, LINK;
+  var nodes = [];
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    N = innerWidth < 640 ? 55 : 95;
+    LINK = Math.min(150, Math.max(110, W / 10));
+    while (nodes.length < N) nodes.push(spawn());
+    nodes.length = N;
+    document.getElementById('spec').innerHTML =
+      'nodes <b>' + N + '</b> · link <b>' + Math.round(LINK) + 'px</b> · gravity <b>r200</b>';
+  }
+  function spawn() {
+    return {
+      x: Math.random() * innerWidth, y: Math.random() * innerHeight,
+      vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5,
+      r: 1.2 + Math.random() * 1.6
+    };
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  var mx = -1e9, my = -1e9, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mx = e.clientX; my = e.clientY; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mx = e.touches[0].clientX; my = e.touches[0].clientY; lastMove = performance.now(); }, { passive: true });
+
+  // 클릭: 반경 260px 척력 펄스
+  addEventListener('pointerdown', function (e) {
+    for (var k = 0; k < nodes.length; k++) {
+      var p = nodes[k];
+      var dx = p.x - e.clientX, dy = p.y - e.clientY;
+      var d = Math.hypot(dx, dy) || 1;
+      if (d < 260) {
+        var f = (1 - d / 260) * 5.5;
+        p.vx += (dx / d) * f; p.vy += (dy / d) * f;
+      }
+    }
+  });
+
+  function frame(t) {
+    cx.fillStyle = '#0a0c10';
+    cx.fillRect(0, 0, W, H);
+    var idle = t - lastMove > 2200;
+    var gx = idle ? W * (0.5 + 0.36 * Math.sin(t * 0.00033)) : mx;
+    var gy = idle ? H * (0.5 + 0.32 * Math.cos(t * 0.00046)) : my;
+
+    for (var i = 0; i < nodes.length; i++) {
+      var p = nodes[i];
+      // 커서 중력: 반경 200px 안에서 약하게 끌린다
+      var dx = gx - p.x, dy = gy - p.y, d = Math.hypot(dx, dy);
+      if (d < 200 && d > 1) {
+        p.vx += (dx / d) * 0.012; p.vy += (dy / d) * 0.012;
+      }
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.995; p.vy *= 0.995;
+      // 속도 하한 — 완전히 멈추지 않는다
+      var sp = Math.hypot(p.vx, p.vy);
+      if (sp < 0.12) { p.vx += (Math.random() - 0.5) * 0.06; p.vy += (Math.random() - 0.5) * 0.06; }
+      if (p.x < 0 || p.x > W) p.vx *= -1;
+      if (p.y < 0 || p.y > H) p.vy *= -1;
+    }
+
+    // 엣지: 임계값 이하 쌍만, 가까울수록 진하게
+    for (var a = 0; a < nodes.length; a++) {
+      for (var b = a + 1; b < nodes.length; b++) {
+        var q = nodes[a], r2 = nodes[b];
+        var ddx = q.x - r2.x, ddy = q.y - r2.y;
+        var dd = ddx * ddx + ddy * ddy;
+        if (dd < LINK * LINK) {
+          var al = (1 - Math.sqrt(dd) / LINK) * 0.5;
+          cx.strokeStyle = 'rgba(242,245,250,' + al.toFixed(3) + ')';
+          cx.lineWidth = 0.7;
+          cx.beginPath(); cx.moveTo(q.x, q.y); cx.lineTo(r2.x, r2.y); cx.stroke();
+        }
+      }
+    }
+    for (var n2 = 0; n2 < nodes.length; n2++) {
+      var pt = nodes[n2];
+      cx.fillStyle = 'rgba(242,245,250,.85)';
+      cx.beginPath(); cx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2); cx.fill();
+    }
+    if (!reduced) requestAnimationFrame(frame);
+  }
+
+  if (reduced) { frame(0); document.body.style.cursor = 'auto'; }
+  else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
