@@ -1,0 +1,234 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import PaletteStrip from '../../components/PaletteStrip.astro';
+import {
+  formatDate,
+  orderSpecimens,
+  relatedSpecimens,
+  specimenNo,
+  withBase,
+} from '../../lib/specimens';
+
+export async function getStaticPaths() {
+  const specimens = await getCollection('specimens');
+  return specimens.map((s) => ({ params: { slug: s.id } }));
+}
+
+const { slug } = Astro.params;
+const all = await getCollection('specimens');
+const ordered = orderSpecimens(all);
+const idx = ordered.findIndex((s) => s.id === slug);
+const specimen = ordered[idx];
+if (!specimen) throw new Error(`표본 없음: ${slug}`);
+
+const { Content } = await render(specimen);
+const d = specimen.data;
+const no = specimenNo(idx);
+const related = relatedSpecimens(all, specimen);
+const demoUrl = d.snippet ? withBase(d.snippet) : null;
+const sourceUrl = `https://github.com/orialthq/specimen/blob/main/public/specimens/${specimen.id}/demo/index.html`;
+const prev = ordered[idx - 1];
+const next = ordered[idx + 1];
+---
+
+<Base title={`${d.title} — Specimen ${no}`} description={`${d.title} 해부 노트 — 씬 구조, 모션 스펙, 재현 스니펫`}>
+  <main class="mx-auto max-w-5xl px-6 py-10">
+    <nav class="flex items-baseline justify-between font-mono text-xs text-muted">
+      <a class="hover:text-accent" href={withBase('/')}>← 표본 서랍</a>
+      <span>ORIALT ARCHIVE · {no}</span>
+    </nav>
+
+    <!-- 라벨 헤더 -->
+    <header class="border-b border-line py-10">
+      <p class="font-mono text-sm text-muted">
+        <span class="text-accent">{no}</span> · {d.category} · 채집 {formatDate(d.collectedAt)} ·
+        curator {d.curator}
+      </p>
+      <h1 class="mt-3 font-display text-4xl text-cream md:text-6xl">{d.title}</h1>
+      <p class="mt-4 font-mono text-xs tracking-wider text-accent">
+        {d.interaction.join(' · ')}
+      </p>
+    </header>
+
+    <!-- 재현 스니펫 임베드 -->
+    {
+      demoUrl && (
+        <section class="py-10">
+          <iframe
+            src={demoUrl}
+            title={`${d.title} — 재현 스니펫 (직접 조작 가능)`}
+            loading="lazy"
+            class="aspect-video w-full border border-line bg-base"
+          />
+          <div class="flex flex-wrap items-baseline justify-between gap-2 pt-3 font-mono text-xs">
+            <span class="text-muted">재현 스니펫 — 마우스 · 클릭으로 직접 조작</span>
+            <span>
+              <a class="text-accent hover:underline" href={demoUrl} target="_blank" rel="noopener">
+                전체 화면 ↗
+              </a>
+              <span class="text-muted"> · </span>
+              <a class="text-muted hover:underline" href={sourceUrl} target="_blank" rel="noopener">
+                소스 보기 ↗
+              </a>
+              <span class="text-muted"> · </span>
+              <a class="text-muted hover:underline" href={d.url} target="_blank" rel="noopener">
+                원본 방문 ↗
+              </a>
+            </span>
+          </div>
+        </section>
+      )
+    }
+
+    <!-- 박물관 라벨 블록: 전체 메타데이터 -->
+    <section class="border-y border-line py-8">
+      <dl class="grid grid-cols-2 gap-x-6 gap-y-6 md:grid-cols-4">
+        <div>
+          <dt class="font-mono text-[11px] uppercase tracking-widest text-muted">분류</dt>
+          <dd class="mt-1 text-sm text-cream">{d.category}</dd>
+        </div>
+        <div>
+          <dt class="font-mono text-[11px] uppercase tracking-widest text-muted">채집</dt>
+          <dd class="mt-1 font-mono text-sm text-cream">
+            {formatDate(d.collectedAt)} · {d.curator}
+          </dd>
+        </div>
+        <div>
+          <dt class="font-mono text-[11px] uppercase tracking-widest text-muted">스택</dt>
+          <dd class="mt-1 font-mono text-sm text-cream">{d.stack.join(' · ')}</dd>
+        </div>
+        <div>
+          <dt class="font-mono text-[11px] uppercase tracking-widest text-muted">타이포</dt>
+          <dd class="mt-1 text-sm text-cream">
+            {d.typography.classification}
+            <span class="mt-0.5 block text-xs text-muted">{d.typography.display}</span>
+          </dd>
+        </div>
+      </dl>
+      <div class="pt-8">
+        <p class="pb-3 font-mono text-[11px] uppercase tracking-widest text-muted">
+          추출 팔레트 — 클릭해서 복사
+        </p>
+        <PaletteStrip palette={d.palette} />
+      </div>
+    </section>
+
+    <!-- 해부 노트 -->
+    <article class="note py-12">
+      <Content />
+    </article>
+
+    <!-- 이전/다음 -->
+    <nav class="flex justify-between border-t border-line py-6 font-mono text-xs">
+      {
+        prev ? (
+          <a class="text-muted hover:text-accent" href={withBase(`/s/${prev.id}/`)}>
+            ← {specimenNo(idx - 1)} {prev.data.title}
+          </a>
+        ) : (
+          <span />
+        )
+      }
+      {
+        next && (
+          <a class="text-right text-muted hover:text-accent" href={withBase(`/s/${next.id}/`)}>
+            {specimenNo(idx + 1)} {next.data.title} →
+          </a>
+        )
+      }
+    </nav>
+
+    <!-- 같은 태그의 다른 표본 -->
+    <section class="border-t border-line py-10">
+      <h2 class="pb-6 font-mono text-sm text-muted">같은 계열의 표본</h2>
+      <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+        {
+          related.map((r) => (
+            <a
+              class="group block border border-line transition-colors hover:border-accent"
+              href={withBase(`/s/${r.id}/`)}
+            >
+              <img
+                src={withBase(r.data.media.cover)}
+                alt={`${r.data.title} 커버`}
+                loading="lazy"
+                class="aspect-video w-full object-cover"
+              />
+              <div class="border-t border-line p-3">
+                <p class="font-mono text-[11px] text-muted">
+                  {specimenNo(ordered.findIndex((s) => s.id === r.id))}
+                </p>
+                <p class="mt-1 font-display text-lg text-cream group-hover:text-accent">
+                  {r.data.title}
+                </p>
+                <p class="mt-1 font-mono text-[11px] text-muted">
+                  {r.data.interaction.join(' · ')}
+                </p>
+              </div>
+            </a>
+          ))
+        }
+      </div>
+    </section>
+  </main>
+</Base>
+
+<style>
+  /* 해부 노트 프로즈 — 박물관 도록 톤. Content 렌더 산출물이라 :global 필요 */
+  .note :global(h2) {
+    font-family: 'Bodoni Moda', serif;
+    font-size: 1.6rem;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 0.5rem;
+    margin: 2.6rem 0 1.1rem;
+  }
+  .note :global(h2:first-child) {
+    margin-top: 0;
+  }
+  .note :global(p) {
+    color: var(--text-primary);
+    opacity: 0.88;
+    line-height: 1.85;
+    margin: 0.9rem 0;
+    max-width: 68ch;
+  }
+  .note :global(> p:first-child) {
+    font-size: 1.06rem;
+    color: var(--text-muted);
+    opacity: 1;
+  }
+  .note :global(ul) {
+    margin: 0.9rem 0;
+    padding-left: 1.1rem;
+    max-width: 68ch;
+  }
+  .note :global(li) {
+    color: var(--text-primary);
+    opacity: 0.88;
+    line-height: 1.8;
+    margin: 0.35rem 0;
+    list-style: none;
+    position: relative;
+  }
+  .note :global(li)::before {
+    content: '—';
+    position: absolute;
+    left: -1.1rem;
+    color: var(--accent);
+    opacity: 0.7;
+  }
+  .note :global(strong) {
+    color: var(--text-primary);
+    font-weight: 700;
+  }
+  .note :global(code) {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.86em;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--line) 55%, transparent);
+    padding: 0.1em 0.4em;
+    border-radius: 3px;
+  }
+</style>

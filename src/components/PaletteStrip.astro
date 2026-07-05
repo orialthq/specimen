@@ -1,0 +1,52 @@
+---
+/** 추출 팔레트 스트립 — hex 클릭 시 클립보드 복사 (SPEC §5 해부 페이지) */
+interface Props {
+  palette: string[];
+}
+const { palette } = Astro.props;
+---
+
+<div class="flex w-full" role="list" aria-label="추출 팔레트">
+  {
+    palette.map((hex) => (
+      <button
+        type="button"
+        role="listitem"
+        class="group flex-1 cursor-pointer border-0 bg-transparent p-0 text-left"
+        data-copy-hex={hex}
+        title={`${hex} 복사`}
+      >
+        <span
+          class="block h-14 border border-line transition-transform group-hover:-translate-y-0.5 md:h-20"
+          style={`background:${hex}`}
+        />
+        <span
+          class="mt-2 block font-mono text-[11px] tracking-wider text-muted group-hover:text-accent"
+          data-hex-label
+        >
+          {hex}
+        </span>
+      </button>
+    ))
+  }
+</div>
+
+<script>
+  document.addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy-hex]');
+    if (!btn) return;
+    const hex = btn.dataset.copyHex;
+    const label = btn.querySelector<HTMLElement>('[data-hex-label]');
+    if (!hex || !label) return;
+    try {
+      await navigator.clipboard.writeText(hex);
+      const orig = label.textContent;
+      label.textContent = 'copied ✓';
+      setTimeout(() => {
+        label.textContent = orig;
+      }, 1200);
+    } catch {
+      /* clipboard 미지원 환경은 조용히 무시 */
+    }
+  });
+</script>
