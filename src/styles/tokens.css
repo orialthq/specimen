@@ -1,0 +1,33 @@
+@import 'tailwindcss';
+
+/*
+ * Specimen 디자인 토큰 (CLAUDE.md 확정값 — 임의 변경 금지)
+ * 박물관 아카이브 / 에디토리얼 무드
+ */
+:root {
+  --bg-base: #292919; /* 다크 올리브 배경 */
+  --text-primary: #f7f7ee; /* 크림 텍스트 */
+  --text-muted: #a8a89a; /* 메타 정보 */
+  --line: #3d3d2e; /* 보더, 해부도 라인 */
+  --accent: #d9a441; /* 골드 — 태그, 하이라이트 (절제) */
+}
+
+/* Tailwind 4 테마 연결 — bg-base, text-cream, text-muted, border-line, text-accent 등 */
+@theme inline {
+  --color-*: initial;
+  --color-base: var(--bg-base);
+  --color-cream: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+
+  --font-display: 'Bodoni Moda', 'Didot', serif;
+  --font-sans: 'Pretendard Variable', Pretendard, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
