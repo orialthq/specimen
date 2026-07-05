@@ -32,7 +32,11 @@ const prev = ordered[idx - 1];
 const next = ordered[idx + 1];
 ---
 
-<Base title={`${d.title} — Specimen ${no}`} description={`${d.title} 해부 노트 — 씬 구조, 모션 스펙, 재현 스니펫`}>
+<Base
+  title={`${d.title} — Specimen ${no}`}
+  description={`${d.title} 해부 노트 — 씬 구조, 모션 스펙, 재현 스니펫`}
+  ogImage={d.media.cover}
+>
   <main class="mx-auto max-w-5xl px-6 py-10">
     <nav class="flex items-baseline justify-between font-mono text-xs text-muted">
       <a class="hover:text-accent" href={withBase('/')}>← 표본 서랍</a>
@@ -177,7 +181,7 @@ const next = ordered[idx + 1];
 <style>
   /* 해부 노트 프로즈 — 박물관 도록 톤. Content 렌더 산출물이라 :global 필요 */
   .note :global(h2) {
-    font-family: 'Bodoni Moda', serif;
+    font-family: 'Bodoni Moda', 'Nanum Myeongjo', serif;
     font-size: 1.6rem;
     color: var(--text-primary);
     border-bottom: 1px solid var(--line);

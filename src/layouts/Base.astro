@@ -4,12 +4,18 @@ import '../styles/tokens.css';
 interface Props {
   title?: string;
   description?: string;
+  /** 사이트 루트 기준 경로 (예: /specimens/x/cover.webp) */
+  ogImage?: string;
 }
 
 const {
   title = 'Specimen — 웹 디자인 표본 아카이브',
   description = '웹 디자인 레퍼런스를 표본으로 수집하고 해부하는 아카이브. 이징 값, 컬러 시스템, 전환 타이밍까지.',
+  ogImage = '/og.jpg',
 } = Astro.props;
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const ogImageUrl = new URL(`${base}${ogImage}`, Astro.site).href;
 ---
 
 <!doctype html>
@@ -19,6 +25,11 @@ const {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta name="twitter:card" content="summary_large_image" />
     <link
       rel="icon"
       href={`${import.meta.env.BASE_URL.replace(/\/$/, '')}/favicon.svg`}
@@ -29,7 +40,7 @@ const {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400..900&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400..900&family=JetBrains+Mono:wght@400;500&family=Nanum+Myeongjo:wght@700&display=swap"
     />
     <link
       rel="stylesheet"

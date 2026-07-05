@@ -21,7 +21,8 @@
   --color-line: var(--line);
   --color-accent: var(--accent);
 
-  --font-display: 'Bodoni Moda', 'Didot', serif;
+  /* 한글 디스플레이는 Nanum Myeongjo로 폴백 — OS 세리프 편차 방지 */
+  --font-display: 'Bodoni Moda', 'Nanum Myeongjo', 'Didot', serif;
   --font-sans: 'Pretendard Variable', Pretendard, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }

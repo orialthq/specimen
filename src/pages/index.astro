@@ -27,7 +27,12 @@ const facets = [
 <Base>
   <main class="mx-auto max-w-6xl px-6 py-16">
     <header class="border-b border-line pb-8">
-      <p class="font-mono text-sm text-muted">ORIALT ARCHIVE</p>
+      <div class="flex items-baseline justify-between">
+        <p class="font-mono text-sm text-muted">ORIALT ARCHIVE</p>
+        <a class="font-mono text-xs text-muted hover:text-accent" href={withBase('/about/')}>
+          about
+        </a>
+      </div>
       <h1 class="font-display text-5xl text-cream md:text-7xl">Specimen</h1>
       <p class="mt-4 max-w-xl text-muted">
         웹 디자인 레퍼런스를 표본으로 수집하고 해부하는 아카이브.

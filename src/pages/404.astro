@@ -1,0 +1,31 @@
+---
+import Base from '../layouts/Base.astro';
+import { withBase } from '../lib/specimens';
+---
+
+<Base title="404 — 채집되지 않은 표본" description="이 표본은 아직 채집되지 않았습니다.">
+  <main class="mx-auto flex min-h-[80vh] max-w-3xl flex-col items-center justify-center px-6 text-center">
+    <!-- 빈 표본 서랍 -->
+    <div
+      class="flex aspect-video w-full max-w-md flex-col items-center justify-center border border-dashed border-line"
+    >
+      <p class="font-mono text-[11px] uppercase tracking-widest text-muted">specimen not found</p>
+      <p class="mt-2 font-mono text-5xl text-line">∅</p>
+    </div>
+
+    <p class="mt-10 font-mono text-sm text-accent">ERROR 404</p>
+    <h1 class="mt-3 font-display text-3xl text-cream md:text-5xl">
+      이 표본은 아직 채집되지 않았습니다
+    </h1>
+    <p class="mt-4 max-w-md text-sm leading-7 text-muted">
+      주소가 옮겨졌거나, 아직 아무도 이 기법을 해부하지 않았습니다. 서랍으로 돌아가 다른 표본을
+      열어보세요.
+    </p>
+    <a
+      class="mt-8 border border-line px-4 py-2 font-mono text-xs text-accent transition-colors hover:border-accent"
+      href={withBase('/')}
+    >
+      ← 표본 서랍으로
+    </a>
+  </main>
+</Base>
