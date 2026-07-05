@@ -3,6 +3,11 @@ import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
 
 const specimens = await getCollection('specimens');
+const featured = specimens.find((s) => s.data.featured);
+
+// base('/specimen') 하위 정적 경로 결합 — BASE_URL 트레일링 슬래시 유무 흡수
+const withBase = (path: string) =>
+  `${import.meta.env.BASE_URL.replace(/\/$/, '')}${path}`;
 ---
 
 <Base>
@@ -14,6 +19,43 @@ const specimens = await getCollection('specimens');
         웹 디자인 레퍼런스를 표본으로 수집하고 해부하는 아카이브.
       </p>
     </header>
+
+    {
+      featured && featured.data.snippet && (
+        <section class="border-b border-line py-12">
+          <div class="flex flex-wrap items-baseline justify-between gap-2 pb-4">
+            <p class="font-mono text-sm text-muted">
+              <span class="text-accent">No.001</span> · {featured.data.title} · 채집{' '}
+              {featured.data.collectedAt.toISOString().slice(0, 10)}
+            </p>
+            <p class="font-mono text-xs text-muted">
+              <a
+                class="text-accent hover:underline"
+                href={withBase(featured.data.snippet)}
+                target="_blank"
+                rel="noopener"
+              >
+                전체 화면 ↗
+              </a>
+              {' · '}
+              <a class="hover:underline" href={featured.data.url} target="_blank" rel="noopener">
+                원본 ↗
+              </a>
+            </p>
+          </div>
+          <iframe
+            src={withBase(featured.data.snippet)}
+            title={`${featured.data.title} — 재현 스니펫`}
+            loading="lazy"
+            class="aspect-video w-full border border-line"
+          ></iframe>
+          <p class="pt-3 font-mono text-xs text-muted">
+            재현 스니펫 — 원본의 코드가 아니라 기법(carry backdrop)을 추출한 자체 재현물. 스크롤 ·
+            방향키 · 스와이프로 조작.
+          </p>
+        </section>
+      )
+    }
 
     <section class="py-12">
       <p class="font-mono text-sm text-muted">
