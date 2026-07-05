@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Lorenz Attractor 재현 스니펫</title>
+<style>
+  /* 기법 연구: 로렌츠 방정식의 카오스 궤적을 실시간 적분해 그린다.
+     결정론인데 예측 불가 — 나비가 두 날개 사이를 언제 건널지 모른다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #16030a; font-family: Georgia, 'Times New Roman', serif; cursor: crosshair; }
+  canvas#lz { position: fixed; inset: 0; z-index: 1; }
+  .title { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; }
+  .title h1 { font-style: italic; font-weight: 400; line-height: .95; font-size: clamp(64px, 15vw, 200px); color: #ffe9ea; text-shadow: 0 2px 50px rgba(22,3,10,.65); }
+  .title p { margin-top: 18px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #ff7d70; opacity: .9; }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #ffd9d4; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #ff5a4e; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="lz"></canvas>
+  <div class="title"><h1>Lorenz</h1><p>σ10 · ρ28 · β8/3 — DRAG = ORBIT</p></div>
+  <p class="hud tl">SPECIMEN · <b>CHAOS</b></p>
+  <p class="hud br">dt <b>0.005</b> · steps <b>10/frame</b> · proj <b>rot-y</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('lz'), cx = cv.getContext('2d');
+  var W, H, DPR;
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cx.fillStyle = '#16030a'; cx.fillRect(0, 0, W, H);
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  var SG = 10, RHO = 28, BETA = 8 / 3, DT = 0.005;
+  var x = 0.1, y = 0, z = 25;
+  var mx = 0, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mx = (e.clientX / W - 0.5) * 2; lastMove = performance.now(); });
+
+  var yaw = 0;
+  function frame(t) {
+    // 느린 페이드 — 리본이 겹겹이 쌓인다
+    cx.globalCompositeOperation = 'source-over';
+    cx.fillStyle = 'rgba(22,3,10,0.035)'; cx.fillRect(0, 0, W, H);
+    cx.globalCompositeOperation = 'lighter';
+
+    var idle = t - lastMove > 2400;
+    var target = idle ? Math.sin(t * 0.00018) * 1.2 : mx * 1.6;
+    yaw += (target + t * 0.00012 - yaw) * 0.03; // 상시 저속 공전 + 커서 조향
+
+    var s = Math.min(W, H) / 62, cyx = W / 2, cyy = H / 2 + s * 25;
+    var cosY = Math.cos(yaw), sinY = Math.sin(yaw);
+    for (var i = 0; i < 24; i++) {
+      var px3 = x * cosY + y * sinY, py3 = z;
+      var sx0 = cyx + px3 * s, sy0 = cyy - py3 * s;
+      // RK 없이 오일러 — dt가 작아 시각적으로 충분
+      var dx = SG * (y - x), dy = x * (RHO - z) - y, dz = x * y - BETA * z;
+      x += dx * DT; y += dy * DT; z += dz * DT;
+      var qx3 = x * cosY + y * sinY;
+      var sx1 = cyx + qx3 * s, sy1 = cyy - z * s;
+      var sp = Math.min(1, Math.hypot(dx, dy, dz) / 90); // 속도 → 색
+      cx.strokeStyle = 'rgba(' + (255) + ',' + ((233 - sp * 160) | 0) + ',' + ((222 - sp * 150) | 0) + ',' + (0.16 + sp * 0.3).toFixed(3) + ')';
+      cx.lineWidth = 1.1;
+      cx.beginPath(); cx.moveTo(sx0, sy0); cx.lineTo(sx1, sy1); cx.stroke();
+    }
+    if (!reduced) requestAnimationFrame(frame);
+  }
+  // 초기 에칭: 나비 형상을 미리 새겨두고 라이브 적분을 잇는다
+  (function etch() {
+    cx.globalCompositeOperation = 'lighter';
+    var s0 = Math.min(W, H) / 62, c0x = W / 2, c0y = H / 2 + s0 * 25;
+    for (var k0 = 0; k0 < 6500; k0++) {
+      var ex0 = c0x + x * s0, ey0 = c0y - z * s0;
+      var dx0 = SG * (y - x), dy0 = x * (RHO - z) - y, dz0 = x * y - BETA * z;
+      x += dx0 * DT; y += dy0 * DT; z += dz0 * DT;
+      cx.strokeStyle = 'rgba(255,140,125,0.05)';
+      cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(ex0, ey0); cx.lineTo(c0x + x * s0, c0y - z * s0); cx.stroke();
+    }
+  })();
+  if (reduced) {
+    // 정적 폴백: 궤적 6000스텝을 한 번에 새긴다
+    cx.globalCompositeOperation = 'lighter';
+    var s2 = Math.min(W, H) / 62;
+    for (var k = 0; k < 6000; k++) {
+      var ax0 = W / 2 + x * s2, ay0 = H / 2 + s2 * 25 - z * s2;
+      var dx2 = SG * (y - x), dy2 = x * (RHO - z) - y, dz2 = x * y - BETA * z;
+      x += dx2 * DT; y += dy2 * DT; z += dz2 * DT;
+      cx.strokeStyle = 'rgba(255,120,110,0.05)';
+      cx.beginPath(); cx.moveTo(ax0, ay0); cx.lineTo(W / 2 + x * s2, H / 2 + s2 * 25 - z * s2); cx.stroke();
+    }
+    document.body.style.cursor = 'auto';
+  } else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

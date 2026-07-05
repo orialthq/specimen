@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Boids Flock 재현 스니펫</title>
+<style>
+  /* 기법 연구: Reynolds 1987의 boids — 분리/정렬/응집 3규칙만으로 군집이 창발한다.
+     커서는 포식자: 반경 안의 개체가 흩어졌다가 다시 뭉친다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #02100c; font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif; cursor: crosshair; }
+  canvas#bd { position: fixed; inset: 0; z-index: 1; }
+  .title { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.04em; line-height: .9; font-size: clamp(60px, 14vw, 200px);
+    background: linear-gradient(120deg, #eafff7, #2ee6a8 60%, #0e8f66);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .title p { margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #8fe8c8; opacity: .85; }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #c8f5e4; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #2ee6a8; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="bd"></canvas>
+  <div class="title"><h1>BOIDS</h1><p>3 RULES · CURSOR = PREDATOR</p></div>
+  <p class="hud tl">SPECIMEN · <b>EMERGENCE</b></p>
+  <p class="hud br" id="spec">agents <b>—</b> · rules <b>sep·ali·coh</b> · flee <b>r140</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('bd'), cx = cv.getContext('2d');
+  var W, H, DPR, N;
+  var bs = [];
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cx.fillStyle = '#02100c'; cx.fillRect(0, 0, W, H);
+    N = innerWidth < 640 ? 80 : 130;
+    while (bs.length < N) { var a = Math.random() * Math.PI * 2; bs.push({ x: Math.random() * W, y: Math.random() * H, vx: Math.cos(a) * 2, vy: Math.sin(a) * 2 }); }
+    bs.length = N;
+    document.getElementById('spec').innerHTML = 'agents <b>' + N + '</b> · rules <b>sep·ali·coh</b> · flee <b>r140</b>';
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  var mx = -1e9, my = -1e9, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mx = e.clientX; my = e.clientY; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mx = e.touches[0].clientX; my = e.touches[0].clientY; lastMove = performance.now(); }, { passive: true });
+
+  var PER = 58, PER2 = PER * PER, SEP = 24, SEP2 = SEP * SEP, MAX = 2.7;
+  function frame(t) {
+    cx.fillStyle = 'rgba(2,16,12,0.16)'; cx.fillRect(0, 0, W, H); // 짧은 잔상
+    var idle = t - lastMove > 2200;
+    var px = idle ? W * (0.5 + 0.4 * Math.sin(t * 0.00034)) : mx;
+    var py = idle ? H * (0.5 + 0.36 * Math.cos(t * 0.00047)) : my;
+
+    for (var i = 0; i < N; i++) {
+      var b = bs[i];
+      var cxs = 0, cys = 0, axs = 0, ays = 0, sxs = 0, sys = 0, cnt = 0;
+      for (var j = 0; j < N; j++) {
+        if (j === i) continue;
+        var o = bs[j], dx = o.x - b.x, dy = o.y - b.y, d2 = dx * dx + dy * dy;
+        if (d2 > PER2) continue;
+        cnt++;
+        cxs += o.x; cys += o.y;          // 응집: 이웃 무게중심으로
+        axs += o.vx; ays += o.vy;        // 정렬: 이웃 평균 속도로
+        if (d2 < SEP2 && d2 > 0.01) {    // 분리: 너무 가까우면 밀어냄
+          sxs -= dx / d2 * 14; sys -= dy / d2 * 14;
+        }
+      }
+      if (cnt) {
+        b.vx += ((cxs / cnt - b.x) * 0.0016) + ((axs / cnt - b.vx) * 0.045) + sxs * 0.06;
+        b.vy += ((cys / cnt - b.y) * 0.0016) + ((ays / cnt - b.vy) * 0.045) + sys * 0.06;
+      }
+      // 포식자 회피
+      var fdx = b.x - px, fdy = b.y - py, fd2 = fdx * fdx + fdy * fdy;
+      if (fd2 < 140 * 140 && fd2 > 1) {
+        var fd = Math.sqrt(fd2), ff = (1 - fd / 140) * 0.9;
+        b.vx += fdx / fd * ff; b.vy += fdy / fd * ff;
+      }
+      // 속도 클램프 (하한도 — 멈추지 않는다)
+      var sp = Math.hypot(b.vx, b.vy);
+      if (sp > MAX) { b.vx = b.vx / sp * MAX; b.vy = b.vy / sp * MAX; }
+      else if (sp < 1.1) { b.vx = b.vx / (sp || 1) * 1.1; b.vy = b.vy / (sp || 1) * 1.1; }
+      b.x += b.vx; b.y += b.vy;
+      // 토러스 랩
+      if (b.x < -10) b.x = W + 10; if (b.x > W + 10) b.x = -10;
+      if (b.y < -10) b.y = H + 10; if (b.y > H + 10) b.y = -10;
+    }
+    // 진행 방향 삼각형
+    for (var k = 0; k < N; k++) {
+      var q = bs[k], ang = Math.atan2(q.vy, q.vx);
+      cx.save(); cx.translate(q.x, q.y); cx.rotate(ang);
+      cx.fillStyle = 'rgba(46,230,168,.9)';
+      cx.beginPath(); cx.moveTo(6.5, 0); cx.lineTo(-4, 3.2); cx.lineTo(-4, -3.2); cx.closePath(); cx.fill();
+      cx.restore();
+    }
+    if (!reduced) requestAnimationFrame(frame);
+  }
+  if (reduced) { frame(0); document.body.style.cursor = 'auto'; }
+  else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

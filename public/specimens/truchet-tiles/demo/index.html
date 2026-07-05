@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Truchet Tiles 재현 스니펫</title>
+<style>
+  /* 기법 연구: 쿼터-서클 타일 하나를 0°/90°로만 놓아도 미로 같은 연속 곡선이
+     창발한다(Truchet/Smith 타일). 대각 웨이브가 주기적으로 타일을 뒤집는다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #10100a; font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif; cursor: crosshair; }
+  canvas#tr { position: fixed; inset: 0; z-index: 1; }
+  .title { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.04em; line-height: .9; font-size: clamp(56px, 13vw, 190px);
+    color: #10100a; -webkit-text-stroke: 2px #f2efdd;
+    text-shadow: 0 2px 60px rgba(16,16,10,.9);
+  }
+  .title p { margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #d9a441; opacity: .9; }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #e8e5cf; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #d9a441; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="tr"></canvas>
+  <div class="title"><h1>TRUCHET</h1><p>1 TILE · 2 STATES · ∞ PATHS — HOVER = FLIP</p></div>
+  <p class="hud tl">SPECIMEN · <b>TILING</b></p>
+  <p class="hud br" id="spec">tiles <b>—</b> · wave <b>7s</b> · flip <b>90° ease</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('tr'), cx = cv.getContext('2d');
+  var W, H, DPR, CELL, cols, rows, tiles;
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    CELL = innerWidth < 640 ? 44 : 52;
+    cols = Math.ceil(W / CELL); rows = Math.ceil(H / CELL);
+    tiles = [];
+    for (var i = 0; i < cols * rows; i++) {
+      var st = Math.random() < 0.5 ? 0 : 1;
+      tiles.push({ s: st, a: st * 90, gold: Math.random() < 0.02 });
+    }
+    document.getElementById('spec').innerHTML =
+      'tiles <b>' + cols * rows + '</b> · wave <b>7s</b> · flip <b>90° ease</b>';
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  var mx = -1e9, my = -1e9, lastMove = -1e9, lastFlip = -1;
+  function hover(cxp, cyp) {
+    var ix = (cxp / CELL) | 0, iy = (cyp / CELL) | 0;
+    var idx = iy * cols + ix;
+    if (idx >= 0 && idx < tiles.length && idx !== lastFlip) {
+      tiles[idx].s ^= 1; lastFlip = idx;
+    }
+  }
+  addEventListener('mousemove', function (e) { mx = e.clientX; my = e.clientY; lastMove = performance.now(); hover(mx, my); });
+  addEventListener('touchmove', function (e) { mx = e.touches[0].clientX; my = e.touches[0].clientY; lastMove = performance.now(); hover(mx, my); }, { passive: true });
+
+  var CYCLE = 7000, waveStart = 0;
+  function frame(t) {
+    // 7초마다 좌상→우하 대각 웨이브가 훑으며 타일을 뒤집는다
+    if (t - waveStart > CYCLE) waveStart = t;
+    var wavePos = (t - waveStart) / 1400; // 대각 인덱스 진행 (칸/ms)
+
+    var idle = t - lastMove > 2200;
+    if (idle) hover(W * (0.5 + 0.42 * Math.sin(t * 0.00037)), H * (0.5 + 0.38 * Math.cos(t * 0.00051)));
+
+    cx.fillStyle = '#10100a'; cx.fillRect(0, 0, W, H);
+    cx.lineCap = 'round';
+    for (var iy = 0; iy < rows; iy++) {
+      for (var ix = 0; ix < cols; ix++) {
+        var tl = tiles[iy * cols + ix];
+        // 웨이브 도달 시 1회 플립
+        var diag = (ix + iy) * 0.55;
+        if (Math.abs(diag - wavePos * 10) < 0.28 && t - waveStart < 1400 * ((cols + rows) * 0.055 + 0.3)) {
+          if (!tl.w || t - tl.w > CYCLE * 0.8) { tl.s ^= 1; tl.w = t; }
+        }
+        // 각도 이징 (0 ↔ 90)
+        tl.a += ((tl.s * 90) - tl.a) * 0.14;
+        var x = ix * CELL, y = iy * CELL, half = CELL / 2;
+        cx.save();
+        cx.translate(x + half, y + half);
+        cx.rotate(tl.a * Math.PI / 180);
+        cx.strokeStyle = tl.gold ? '#d9a441' : 'rgba(242,239,221,.75)';
+        cx.lineWidth = tl.gold ? 2.6 : 1.7;
+        // 쿼터-서클 두 개: 좌상 모서리와 우하 모서리
+        cx.beginPath(); cx.arc(-half, -half, half, 0, Math.PI / 2); cx.stroke();
+        cx.beginPath(); cx.arc(half, half, half, Math.PI, Math.PI * 1.5); cx.stroke();
+        cx.restore();
+      }
+    }
+    if (!reduced) requestAnimationFrame(frame);
+  }
+  if (reduced) {
+    // 정적 폴백: 이징 없이 최종 각도로 한 장
+    for (var k = 0; k < tiles.length; k++) tiles[k].a = tiles[k].s * 90;
+    var raf = requestAnimationFrame; // noop 방지용 — frame 내 재귀는 가드됨
+    frame(0);
+    document.body.style.cursor = 'auto';
+  } else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

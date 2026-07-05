@@ -44,11 +44,11 @@ const specimenNo = (idx: number) => `No.${String(idx + 1).padStart(3, '0')}`;
                     aria-label={`${s.data.title} — 전체 화면으로 열기`}
                   >
                     <iframe
-                      src={`${withBase(s.data.snippet)}?auto=1`}
+                      data-src={`${withBase(s.data.snippet)}?auto=1`}
                       title={`${s.data.title} — 재현 스니펫`}
                       loading="lazy"
                       tabindex="-1"
-                      class="pointer-events-none aspect-video w-full"
+                      class="pointer-events-none aspect-video w-full bg-base"
                     ></iframe>
                   </a>
                   <div class="border-t border-line p-4">
@@ -103,3 +103,25 @@ const specimenNo = (idx: number) => `No.${String(idx + 1).padStart(3, '0')}`;
     </section>
   </main>
 </Base>
+
+<script>
+  // 표본 25+건의 라이브 iframe을 전부 돌리면 rAF가 겹쳐 저사양에서 죽는다.
+  // 뷰포트 ±40% 안의 카드만 로드하고, 멀어지면 언로드해 rAF를 정지시킨다.
+  const frames = document.querySelectorAll<HTMLIFrameElement>('iframe[data-src]');
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        const f = e.target as HTMLIFrameElement;
+        const src = f.dataset.src;
+        if (!src) continue;
+        if (e.isIntersecting) {
+          if (!f.getAttribute('src')) f.src = src;
+        } else if (f.getAttribute('src')) {
+          f.removeAttribute('src'); // about:blank — 데모의 rAF/캔버스 해제
+        }
+      }
+    },
+    { rootMargin: '40% 0px' }
+  );
+  frames.forEach((f) => io.observe(f));
+</script>

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Cloth Flag 재현 스니펫</title>
+<style>
+  /* 기법 연구: Verlet 적분 + 거리 제약만으로 천이 된다. 위치 두 개(현재/이전)의
+     차가 속도를 암시하므로 적분기가 필요 없다 — 게임 물리의 고전. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #0e0205; font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif; cursor: grab; }
+  body.holding { cursor: grabbing; }
+  canvas#cl { position: fixed; inset: 0; z-index: 1; }
+  .title { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; text-align: center; pointer-events: none; padding-bottom: 12vh; }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.04em; line-height: .9; font-size: clamp(48px, 10.5vw, 150px);
+    background: linear-gradient(120deg, #ffe9ec, #e63946 60%, #8f1d26);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .title p { margin-top: 18px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #ff9aa5; opacity: .85; }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #ffd4d9; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #e63946; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="cl"></canvas>
+  <div class="title"><h1>CLOTH</h1><p>VERLET + CONSTRAINTS · DRAG THE FABRIC</p></div>
+  <p class="hud tl">SPECIMEN · <b>SOFT BODY</b></p>
+  <p class="hud br">mesh <b>30×19</b> · iters <b>3</b> · wind <b>noise gust</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('cl'), cx = cv.getContext('2d');
+  var W, H, DPR;
+  var CX = 30, CY = 19, pts = [], REST;
+
+  function build() {
+    pts = [];
+    var fw = W * 0.56, fh = fw * 0.6;
+    REST = fw / (CX - 1);
+    var ox = W * 0.2, oy = H * 0.5 - fh / 2;
+    for (var y = 0; y < CY; y++) for (var x = 0; x < CX; x++) {
+      var pxx = ox + x * REST, pyy = oy + y * (fh / (CY - 1));
+      pts.push({ x: pxx, y: pyy, ox: pxx, oy: pyy, pin: x === 0 });
+    }
+  }
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    build();
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  function hash(x, y) { var n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n); }
+
+  var held = -1, mx = 0, my = 0;
+  addEventListener('pointerdown', function (e) {
+    mx = e.clientX; my = e.clientY;
+    var best = 1e9;
+    for (var i = 0; i < pts.length; i++) {
+      var d = (pts[i].x - mx) * (pts[i].x - mx) + (pts[i].y - my) * (pts[i].y - my);
+      if (d < best) { best = d; held = i; }
+    }
+    if (best > 90 * 90) held = -1;
+    else document.body.classList.add('holding');
+  });
+  addEventListener('pointermove', function (e) { mx = e.clientX; my = e.clientY; });
+  addEventListener('pointerup', function () { held = -1; document.body.classList.remove('holding'); });
+
+  function frame(t) {
+    // 바람: 굵은 거스트 + 잔파
+    var gust = 0.9 + 0.8 * Math.sin(t * 0.0006) + 0.5 * Math.sin(t * 0.0017 + 2);
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      if (p.pin) continue;
+      var yIdx = (i / CX) | 0, xIdx = i % CX;
+      var wind = gust * (0.10 + 0.10 * hash(xIdx * 0.7 + ((t * 0.002) | 0), yIdx));
+      var vx = (p.x - p.ox) * 0.985 + wind;
+      var vy = (p.y - p.oy) * 0.985 + 0.035 + 0.05 * Math.sin(t * 0.001 + xIdx * 0.4);
+      p.ox = p.x; p.oy = p.y;
+      p.x += vx; p.y += vy;
+    }
+    if (held >= 0) { pts[held].x = mx; pts[held].y = my; pts[held].ox = mx; pts[held].oy = my; }
+    // 거리 제약 3회 반복
+    for (var it = 0; it < 3; it++) {
+      for (var y2 = 0; y2 < CY; y2++) for (var x2 = 0; x2 < CX; x2++) {
+        var i2 = y2 * CX + x2, p2 = pts[i2];
+        if (x2 < CX - 1) relax(p2, pts[i2 + 1]);
+        if (y2 < CY - 1) relax(p2, pts[i2 + CX]);
+      }
+    }
+    function relax(a, b) {
+      var dx = b.x - a.x, dy = b.y - a.y;
+      var d = Math.hypot(dx, dy) || 1, diff = (d - REST) / d * 0.5;
+      if (!a.pin) { a.x += dx * diff; a.y += dy * diff; }
+      if (!b.pin) { b.x -= dx * diff; b.y -= dy * diff; }
+    }
+
+    cx.fillStyle = '#0e0205'; cx.fillRect(0, 0, W, H);
+    // 깃대
+    cx.strokeStyle = 'rgba(255,212,217,.5)'; cx.lineWidth = 3;
+    cx.beginPath(); cx.moveTo(pts[0].x, pts[0].y - 30); cx.lineTo(pts[(CY - 1) * CX].x, pts[(CY - 1) * CX].y + 60); cx.stroke();
+    // 메시: 늘어난 만큼 밝게 — 장력의 시각화
+    for (var y3 = 0; y3 < CY; y3++) for (var x3 = 0; x3 < CX; x3++) {
+      var i3 = y3 * CX + x3, a3 = pts[i3];
+      if (x3 < CX - 1) seg(a3, pts[i3 + 1]);
+      if (y3 < CY - 1) seg(a3, pts[i3 + CX]);
+    }
+    function seg(a, b) {
+      var d = Math.hypot(b.x - a.x, b.y - a.y);
+      var stretch = Math.min(1, Math.max(0, (d / REST - 0.9) * 1.6));
+      cx.strokeStyle = 'rgba(' + (230) + ',' + ((57 + stretch * 140) | 0) + ',' + ((70 + stretch * 120) | 0) + ',' + (0.3 + stretch * 0.6).toFixed(2) + ')';
+      cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke();
+    }
+    if (!reduced && !warming) requestAnimationFrame(frame);
+  }
+  var warming = true;
+  for (var w0 = 0; w0 < 140; w0++) frame(w0 * 16); // 워밍업: 바람 먹은 상태로 시작
+  warming = false;
+  if (reduced) { document.body.style.cursor = 'auto'; }
+  else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

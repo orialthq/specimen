@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Particle Text 재현 스니펫</title>
+<style>
+  /* 기법 연구: 타이포를 오프스크린에 굽고 알파를 샘플링해 입자의 홈 좌표로 쓴다.
+     커서가 흩뜨리고 스프링이 재조립한다 — 글자가 물질이 된다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #140208; font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif; cursor: crosshair; }
+  canvas#pt { position: fixed; inset: 0; z-index: 1; }
+  .sub {
+    position: fixed; left: 50%; top: 68%; transform: translateX(-50%); z-index: 2; pointer-events: none;
+    font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px);
+    letter-spacing: .32em; color: #ff8fa3; opacity: .85; white-space: nowrap;
+  }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #ffd7de; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #ff8fa3; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="pt"></canvas>
+  <p class="sub">ALPHA SAMPLING · SPRING HOME · CURSOR = SCATTER</p>
+  <p class="hud tl">SPECIMEN · <b>PARTICLE TYPE</b></p>
+  <p class="hud br" id="spec">particles <b>—</b> · k <b>0.012</b> · damp <b>0.88</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('pt'), cx = cv.getContext('2d');
+  var W, H, DPR, ps = [];
+
+  function build() {
+    // 오프스크린에 워드마크를 굽고 알파 샘플링
+    var off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    var ox = off.getContext('2d');
+    ox.fillStyle = '#fff';
+    ox.textAlign = 'center'; ox.textBaseline = 'middle';
+    var fs = Math.min(W * 0.155, H * 0.34);
+    ox.font = '900 ' + fs + 'px Pretendard, system-ui, sans-serif';
+    ox.fillText('PARTICLE', W / 2, H * 0.46);
+    var data = ox.getImageData(0, 0, W, H).data;
+    ps = [];
+    var STEP = Math.max(4, Math.round(W / 240)); // 밀도는 뷰포트 비례
+    for (var y = 0; y < H; y += STEP) {
+      for (var x = 0; x < W; x += STEP) {
+        if (data[(y * W + x) * 4 + 3] > 128) {
+          ps.push({ hx: x, hy: y, x: Math.random() * W, y: Math.random() * H, vx: 0, vy: 0 });
+        }
+      }
+    }
+    document.getElementById('spec').innerHTML =
+      'particles <b>' + ps.length + '</b> · k <b>0.012</b> · damp <b>0.88</b>';
+  }
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    build();
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  var mx = -1e9, my = -1e9, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mx = e.clientX; my = e.clientY; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mx = e.touches[0].clientX; my = e.touches[0].clientY; lastMove = performance.now(); }, { passive: true });
+  // 클릭: 전체 폭발
+  addEventListener('pointerdown', function (e) {
+    for (var i = 0; i < ps.length; i++) {
+      var p = ps[i], dx = p.x - e.clientX, dy = p.y - e.clientY, d = Math.hypot(dx, dy) || 1;
+      var f = Math.min(9, 460 / d);
+      p.vx += dx / d * f; p.vy += dy / d * f;
+    }
+  });
+
+  var K = 0.012, DAMP = 0.88, RR = 110;
+  function frame(t) {
+    cx.fillStyle = 'rgba(20,2,8,0.5)'; cx.fillRect(0, 0, W, H);
+    var idle = t - lastMove > 2200;
+    var rx = idle ? W * (0.5 + 0.4 * Math.sin(t * 0.00036)) : mx;
+    var ry = idle ? H * (0.46 + 0.3 * Math.cos(t * 0.00049)) : my;
+
+    for (var i = 0; i < ps.length; i++) {
+      var p = ps[i];
+      // 스프링 홈 + 커서 척력
+      p.vx += (p.hx - p.x) * K; p.vy += (p.hy - p.y) * K;
+      var dx = p.x - rx, dy = p.y - ry, d2 = dx * dx + dy * dy;
+      if (d2 < RR * RR && d2 > 1) {
+        var d = Math.sqrt(d2), f = (1 - d / RR) * 3.2;
+        p.vx += dx / d * f; p.vy += dy / d * f;
+      }
+      p.vx *= DAMP; p.vy *= DAMP;
+      p.x += p.vx; p.y += p.vy;
+      // 변위가 클수록 밝게 — 흩어질 때 빛난다
+      var sp = Math.min(1, Math.hypot(p.vx, p.vy) / 7);
+      cx.fillStyle = 'rgba(' + (255) + ',' + ((143 + sp * 100) | 0) + ',' + ((163 + sp * 80) | 0) + ',' + (0.55 + sp * 0.45).toFixed(2) + ')';
+      cx.fillRect(p.x - 1, p.y - 1, 2 + sp * 1.6, 2 + sp * 1.6);
+    }
+    if (!reduced) requestAnimationFrame(frame);
+  }
+  if (reduced) {
+    // 정적 폴백: 홈 좌표에 그대로 조립된 상태
+    cx.fillStyle = '#140208'; cx.fillRect(0, 0, W, H);
+    for (var k = 0; k < ps.length; k++) {
+      cx.fillStyle = 'rgba(255,143,163,.8)';
+      cx.fillRect(ps[k].hx - 1, ps[k].hy - 1, 2, 2);
+    }
+    document.body.style.cursor = 'auto';
+  } else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Voronoi Cells 재현 스니펫</title>
+<style>
+  /* 기법 연구: 보로노이 분할 — 픽셀마다 최근접/차근접 시드 거리차(d2−d1)가
+     작으면 경계다. 시드가 움직이면 세포벽이 유기적으로 재협상된다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #140a06; font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif; cursor: crosshair; }
+  canvas#vr { position: fixed; inset: 0; z-index: 1; }
+  .title { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.04em; line-height: .9; font-size: clamp(56px, 13vw, 190px);
+    background: linear-gradient(120deg, #fff4ec, #ffb08a 58%, #c96a3d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .title p { margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #ffc7a8; opacity: .85; }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #ffe2d2; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #ffb08a; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="vr"></canvas>
+  <div class="title"><h1>VORONOI</h1><p>d₂ − d₁ &lt; ε · CURSOR = 17TH SEED</p></div>
+  <p class="hud tl">SPECIMEN · <b>TESSELLATION</b></p>
+  <p class="hud br">seeds <b>16+1</b> · metric <b>L2</b> · edge <b>ε2.4</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('vr'), cx = cv.getContext('2d');
+  var GW = 200, GH = 125;
+  var buf = document.createElement('canvas');
+  buf.width = GW; buf.height = GH;
+  var bx = buf.getContext('2d');
+  var img = bx.createImageData(GW, GH);
+
+  var W, H;
+  function resize() { W = innerWidth; H = innerHeight; cv.width = W; cv.height = H; cx.imageSmoothingEnabled = true; }
+  resize();
+  addEventListener('resize', resize);
+
+  var NS = 16, seeds = [];
+  for (var i = 0; i < NS; i++) {
+    seeds.push({ x: Math.random() * GW, y: Math.random() * GH, vx: (Math.random() - 0.5) * 0.34, vy: (Math.random() - 0.5) * 0.34 });
+  }
+  var mgx = -1e9, mgy = -1e9, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mgx = e.clientX / W * GW; mgy = e.clientY / H * GH; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mgx = e.touches[0].clientX / W * GW; mgy = e.touches[0].clientY / H * GH; lastMove = performance.now(); }, { passive: true });
+  // 클릭: 그 자리 시드에 킥
+  addEventListener('pointerdown', function (e) {
+    var gx = e.clientX / W * GW, gy = e.clientY / H * GH;
+    for (var k = 0; k < NS; k++) {
+      var dx = seeds[k].x - gx, dy = seeds[k].y - gy, d = Math.hypot(dx, dy) || 1;
+      if (d < 46) { seeds[k].vx += dx / d * 2.2; seeds[k].vy += dy / d * 2.2; }
+    }
+  });
+
+  var sx = new Float32Array(NS + 1), sy = new Float32Array(NS + 1);
+  function frame(t) {
+    var idle = t - lastMove > 2200;
+    var cxp = idle ? GW * (0.5 + 0.38 * Math.sin(t * 0.00035)) : mgx;
+    var cyp = idle ? GH * (0.5 + 0.34 * Math.cos(t * 0.00048)) : mgy;
+
+    for (var k2 = 0; k2 < NS; k2++) {
+      var s = seeds[k2];
+      s.x += s.vx; s.y += s.vy;
+      s.vx *= 0.996; s.vy *= 0.996;
+      var sp = Math.hypot(s.vx, s.vy);
+      if (sp < 0.1) { s.vx += (Math.random() - 0.5) * 0.06; s.vy += (Math.random() - 0.5) * 0.06; }
+      if (s.x < 0 || s.x > GW) s.vx *= -1;
+      if (s.y < 0 || s.y > GH) s.vy *= -1;
+      sx[k2] = s.x; sy[k2] = s.y;
+    }
+    sx[NS] = cxp; sy[NS] = cyp;
+    var n = NS + 1;
+
+    var d = img.data;
+    for (var y = 0, p = 0; y < GH; y++) {
+      for (var x = 0; x < GW; x++, p += 4) {
+        var d1 = 1e9, d2 = 1e9;
+        for (var s2 = 0; s2 < n; s2++) {
+          var ddx = x - sx[s2], ddy = y - sy[s2];
+          var dd = ddx * ddx + ddy * ddy;
+          if (dd < d1) { d2 = d1; d1 = dd; }
+          else if (dd < d2) d2 = dd;
+        }
+        var e = Math.sqrt(d2) - Math.sqrt(d1); // 경계 근접도
+        var edge = e < 2.4 ? 1 - e / 2.4 : 0;
+        var glow = Math.max(0, 1 - Math.sqrt(d1) / 34); // 시드 코어 발광
+        d[p] = 20 + edge * 235 + glow * 60;
+        d[p + 1] = 10 + edge * 166 + glow * 34;
+        d[p + 2] = 6 + edge * 132 + glow * 16;
+        d[p + 3] = 255;
+      }
+    }
+    bx.putImageData(img, 0, 0);
+    cx.drawImage(buf, 0, 0, GW, GH, 0, 0, W, H);
+    if (!reduced) requestAnimationFrame(frame);
+  }
+  if (reduced) { frame(900); document.body.style.cursor = 'auto'; }
+  else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

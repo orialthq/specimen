@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Contour Lines 재현 스니펫</title>
+<style>
+  /* 기법 연구: 노이즈 하이트맵의 등고선을 픽셀 단위 소수부 트릭으로 그린다.
+     frac(h·N)이 0.5 근처면 등고선 — marching squares 없이 지형도가 나온다.
+     커서는 지형을 밀어 올리는 돔: 등고선이 커서 주위로 휜다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #131308; font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif; cursor: crosshair; }
+  canvas#ct { position: fixed; inset: 0; z-index: 1; }
+  .title { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; }
+  .title h1 {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-weight: 700; letter-spacing: .05em; line-height: .95; font-size: clamp(44px, 10vw, 140px); white-space: pre-line;
+    color: #f0f2da; text-shadow: 0 2px 40px rgba(19,19,8,.7);
+  }
+  .title p { margin-top: 18px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #d9a441; opacity: .9; }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #e4e6c8; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #d9a441; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="ct"></canvas>
+  <div class="title"><h1>CONTOUR
++884M</h1><p>ISOLINES · CURSOR = UPLIFT</p></div>
+  <p class="hud tl">SPECIMEN · <b>TOPOGRAPHY</b></p>
+  <p class="hud br">minor <b>×14</b> · major <b>×3.5</b> · drift <b>0.9m/s</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('ct'), cx = cv.getContext('2d');
+  var GW = 220, GH = 137;
+  var buf = document.createElement('canvas');
+  buf.width = GW; buf.height = GH;
+  var bx = buf.getContext('2d');
+  var img = bx.createImageData(GW, GH);
+
+  var W, H;
+  function resize() { W = innerWidth; H = innerHeight; cv.width = W; cv.height = H; cx.imageSmoothingEnabled = true; }
+  resize();
+  addEventListener('resize', resize);
+
+  function hash(x, y) { var n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n); }
+  function vnoise(x, y) {
+    var xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+    var u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    var a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  }
+
+  var mgx = -1e9, mgy = -1e9, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mgx = e.clientX / W * GW; mgy = e.clientY / H * GH; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mgx = e.touches[0].clientX / W * GW; mgy = e.touches[0].clientY / H * GH; lastMove = performance.now(); }, { passive: true });
+
+  function frame(t) {
+    var tt = t * 0.000055;
+    var idle = t - lastMove > 2200;
+    var ux = idle ? GW * (0.5 + 0.38 * Math.sin(t * 0.0003)) : mgx;
+    var uy = idle ? GH * (0.5 + 0.34 * Math.cos(t * 0.00041)) : mgy;
+
+    var d = img.data;
+    for (var y = 0, p = 0; y < GH; y++) {
+      for (var x = 0; x < GW; x++, p += 4) {
+        // 하이트맵: 2옥타브 노이즈, 시간축 표류
+        var h = vnoise(x * 0.028 + tt, y * 0.033 - tt * 0.7) * 0.72 +
+                vnoise(x * 0.07 - tt, y * 0.08 + tt) * 0.28;
+        // 커서 돔: 지형 융기
+        var dx = x - ux, dy = y - uy;
+        h += Math.exp(-(dx * dx + dy * dy) / (2 * 24 * 24)) * 0.38;
+
+        // 소수부 트릭 등고선
+        var fm = Math.abs(((h * 14) % 1) - 0.5);   // minor
+        var fM = Math.abs(((h * 3.5) % 1) - 0.5);  // major
+        var minor = fm < 0.055 ? 1 - fm / 0.055 : 0;
+        var major = fM < 0.03 ? 1 - fM / 0.03 : 0;
+
+        // 지반 음영(높이) + 라인
+        var g = 0.06 + h * 0.05;
+        var r0 = 19 + g * 255, g0 = 19 + g * 255, b0 = 8 + g * 180;
+        r0 += minor * 175; g0 += minor * 180; b0 += minor * 130;   // #C9CFA0
+        r0 += major * 215; g0 += major * 150; b0 += major * 45;    // #D9A441 골드
+        d[p] = r0; d[p + 1] = g0; d[p + 2] = b0; d[p + 3] = 255;
+      }
+    }
+    bx.putImageData(img, 0, 0);
+    cx.drawImage(buf, 0, 0, GW, GH, 0, 0, W, H);
+    if (!reduced) requestAnimationFrame(frame);
+  }
+  if (reduced) { frame(700); document.body.style.cursor = 'auto'; }
+  else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Pendulum Wave 재현 스니펫</title>
+<style>
+  /* 기법 연구: 진자 30개의 주파수를 미세하게 어긋나게 하면(51,52,…80회/분)
+     위상차가 나선→갈라짐→재정렬의 파동 패턴을 스스로 연출한다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #041210; font-family: Georgia, 'Times New Roman', serif; cursor: crosshair; }
+  canvas#pd { position: fixed; inset: 0; z-index: 1; }
+  .title { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; text-align: center; pointer-events: none; padding-bottom: 9vh; }
+  .title h1 { font-style: italic; font-weight: 400; line-height: .95; font-size: clamp(52px, 12vw, 165px); color: #eafffb; text-shadow: 0 2px 50px rgba(4,18,16,.7); }
+  .title p { margin-top: 16px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #40e0d0; opacity: .9; }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #c8f2ec; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #40e0d0; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="pd"></canvas>
+  <div class="title"><h1>Pendulum</h1><p>f = (51+i)/60Hz · CLICK = RESYNC</p></div>
+  <p class="hud tl">SPECIMEN · <b>PHASE PATTERN</b></p>
+  <p class="hud br" id="spec">bobs <b>30</b> · cycle <b>60s</b> · t <b>—</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('pd'), cx = cv.getContext('2d');
+  var W, H, DPR;
+  function resize() {
+    DPR = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cx.fillStyle = '#041210'; cx.fillRect(0, 0, W, H);
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  var N = 30, t0 = 0;
+  addEventListener('pointerdown', function () { t0 = performance.now(); }); // 재동기화
+
+  var mx = -1e9, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mx = e.clientX; lastMove = performance.now(); });
+
+  function frame(t) {
+    cx.fillStyle = 'rgba(4,18,16,0.075)'; cx.fillRect(0, 0, W, H); // 긴 잔상 — 직조 무늬
+    var T = (t - t0) / 1000;
+    document.getElementById('spec').innerHTML =
+      'bobs <b>30</b> · cycle <b>60s</b> · t <b>' + (T % 60).toFixed(1) + 's</b>';
+
+    var left = W * 0.12, right = W * 0.88, topY = H * 0.10;
+    var L = H * 0.52; // 줄 길이(시각)
+    var idle = t - lastMove > 2200;
+    var focus = idle ? W * (0.5 + 0.4 * Math.sin(t * 0.0003)) : mx;
+
+    for (var i = 0; i < N; i++) {
+      var xi = left + (right - left) * (i / (N - 1));
+      // 고전 데모의 주파수 배열: 60초에 전체가 재정렬
+      var f = (51 + i) / 60;
+      var th = Math.sin(2 * Math.PI * f * T) * 0.62; // 최대 진폭(rad)
+      var bx = xi + Math.sin(th) * L * 0.42;
+      var by = topY + Math.cos(th) * L;
+      // 커서 근접 열만 밝게 — 포커스 렌즈
+      var g = Math.exp(-((xi - focus) * (xi - focus)) / (2 * 160 * 160));
+      // 줄
+      cx.strokeStyle = 'rgba(64,224,208,' + (0.06 + g * 0.12).toFixed(3) + ')';
+      cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(xi, topY); cx.lineTo(bx, by); cx.stroke();
+      // 추
+      var r = 3 + g * 3.5;
+      cx.fillStyle = 'rgba(' + ((64 + g * 160) | 0) + ',' + ((224 + g * 31) | 0) + ',' + ((208 + g * 40) | 0) + ',' + (0.5 + g * 0.5).toFixed(2) + ')';
+      cx.beginPath(); cx.arc(bx, by, r, 0, Math.PI * 2); cx.fill();
+    }
+    // 지지대
+    cx.strokeStyle = 'rgba(234,255,251,.25)'; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(left - 30, topY); cx.lineTo(right + 30, topY); cx.stroke();
+    if (!reduced) requestAnimationFrame(frame);
+  }
+  if (reduced) {
+    t0 = -21000; frame(0); // 패턴이 풍부한 시점의 정지 화면
+    document.body.style.cursor = 'auto';
+  } else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

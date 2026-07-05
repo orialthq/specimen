@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Physarum 재현 스니펫</title>
+<style>
+  /* 기법 연구: 점균(Physarum polycephalum) 에이전트 시뮬레이션.
+     감지→회전→전진→분비 루프만으로 수송 네트워크가 자란다. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #0f0a02; font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif; cursor: crosshair; }
+  canvas#ph { position: fixed; inset: 0; z-index: 1; }
+  .title { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; }
+  .title h1 {
+    font-weight: 900; letter-spacing: -.04em; line-height: .9; font-size: clamp(52px, 12.5vw, 180px);
+    background: linear-gradient(120deg, #fff6e0, #ffb524 58%, #a86a00);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .title p { margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #ffd684; opacity: .85; }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #ffe9c2; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #ffb524; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="ph"></canvas>
+  <div class="title"><h1>PHYSARUM</h1><p>SENSE · TURN · DEPOSIT — CURSOR = FOOD</p></div>
+  <p class="hud tl">SPECIMEN · <b>SLIME MOLD</b></p>
+  <p class="hud br">agents <b>3500</b> · sense <b>9px ±26°</b> · decay <b>×0.94</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('ph'), cx = cv.getContext('2d');
+  var GW = 440, GH = 275; // 트레일 맵 해상도
+  var trail = new Float32Array(GW * GH);
+  var tmp = new Float32Array(GW * GH);
+  var NA = 3500;
+  var ax = new Float32Array(NA), ay = new Float32Array(NA), aa = new Float32Array(NA);
+  for (var i = 0; i < NA; i++) {
+    // 중심 링에서 출발 — 초기 네트워크가 방사형으로 자란다
+    var t0 = Math.random() * Math.PI * 2, r0 = 30 + Math.random() * 60;
+    ax[i] = GW / 2 + Math.cos(t0) * r0; ay[i] = GH / 2 + Math.sin(t0) * r0 * 0.62;
+    aa[i] = Math.random() * Math.PI * 2;
+  }
+  var buf = document.createElement('canvas');
+  buf.width = GW; buf.height = GH;
+  var bx = buf.getContext('2d');
+  var img = bx.createImageData(GW, GH);
+
+  var W, H;
+  function resize() { W = innerWidth; H = innerHeight; cv.width = W; cv.height = H; cx.imageSmoothingEnabled = true; }
+  resize();
+  addEventListener('resize', resize);
+
+  var mgx = -1, mgy = -1, lastMove = -1e9;
+  addEventListener('mousemove', function (e) { mgx = e.clientX / W * GW; mgy = e.clientY / H * GH; lastMove = performance.now(); });
+  addEventListener('touchmove', function (e) { mgx = e.touches[0].clientX / W * GW; mgy = e.touches[0].clientY / H * GH; lastMove = performance.now(); }, { passive: true });
+
+  var SD = 9, SA = 0.45, TURN = 0.32, SPEED = 1.25;
+  function sample(x, y) {
+    var xi = x | 0, yi = y | 0;
+    if (xi < 0) xi += GW; if (xi >= GW) xi -= GW;
+    if (yi < 0) yi += GH; if (yi >= GH) yi -= GH;
+    return trail[yi * GW + xi];
+  }
+  function frame(t) {
+    var idle = t - lastMove > 2200;
+    var fx = idle ? GW * (0.5 + 0.4 * Math.sin(t * 0.00031)) : mgx;
+    var fy = idle ? GH * (0.5 + 0.36 * Math.cos(t * 0.00044)) : mgy;
+    // 먹이: 커서 위치에 유인 물질 상시 분비
+    if (fx >= 0) { var fi = ((fy | 0) * GW + (fx | 0)); if (fi >= 0 && fi < trail.length) trail[fi] = Math.min(trail[fi] + 8, 12); }
+
+    for (var i2 = 0; i2 < NA; i2++) {
+      var a = aa[i2];
+      var f = sample(ax[i2] + Math.cos(a) * SD, ay[i2] + Math.sin(a) * SD);
+      var l = sample(ax[i2] + Math.cos(a - SA) * SD, ay[i2] + Math.sin(a - SA) * SD);
+      var r = sample(ax[i2] + Math.cos(a + SA) * SD, ay[i2] + Math.sin(a + SA) * SD);
+      if (f > l && f > r) { /* 직진 */ }
+      else if (l > r) a -= TURN;
+      else if (r > l) a += TURN;
+      else a += (Math.random() - 0.5) * TURN;
+      aa[i2] = a;
+      var nx = ax[i2] + Math.cos(a) * SPEED, ny = ay[i2] + Math.sin(a) * SPEED;
+      if (nx < 0) nx += GW; if (nx >= GW) nx -= GW;
+      if (ny < 0) ny += GH; if (ny >= GH) ny -= GH;
+      ax[i2] = nx; ay[i2] = ny;
+      var di = (ny | 0) * GW + (nx | 0);
+      trail[di] = Math.min(trail[di] + 1, 10); // 분비
+    }
+    // 확산(십자 3탭 근사) + 증발
+    for (var y2 = 0; y2 < GH; y2++) {
+      var up = ((y2 - 1 + GH) % GH) * GW, dn = ((y2 + 1) % GH) * GW, row = y2 * GW;
+      for (var x2 = 0; x2 < GW; x2++) {
+        var l2 = (x2 - 1 + GW) % GW, r2 = (x2 + 1) % GW;
+        tmp[row + x2] = (trail[row + x2] * 4 + trail[up + x2] + trail[dn + x2] + trail[row + l2] + trail[row + r2]) / 8 * 0.94;
+      }
+    }
+    var sw = trail; trail = tmp; tmp = sw;
+
+    // 렌더: 농도 → 앰버 램프 (감마 0.6)
+    var d = img.data;
+    for (var i3 = 0, p = 0; i3 < GW * GH; i3++, p += 4) {
+      var v = Math.pow(Math.min(1, trail[i3] * 0.24), 0.6);
+      d[p] = 15 + v * 240; d[p + 1] = 10 + v * 171; d[p + 2] = 2 + v * 90; d[p + 3] = 255;
+    }
+    bx.putImageData(img, 0, 0);
+    cx.drawImage(buf, 0, 0, GW, GH, 0, 0, W, H);
+    if (!reduced) requestAnimationFrame(frame);
+  }
+  if (reduced) {
+    for (var w2 = 0; w2 < 240; w2++) frame(1e9); // 네트워크를 미리 기른 한 장
+    document.body.style.cursor = 'auto';
+  } else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

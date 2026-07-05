@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Specimen No.— Reaction-Diffusion 재현 스니펫</title>
+<style>
+  /* 기법 연구: Gray-Scott 반응-확산. 두 가상 화학종 A/B의 확산+반응 방정식이
+     산호·지문 무늬를 스스로 기른다. 커서가 B를 주입하는 시드. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #12000e; font-family: Georgia, 'Times New Roman', serif; cursor: crosshair; }
+  canvas#rd { position: fixed; inset: 0; z-index: 1; image-rendering: auto; }
+  .title { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; }
+  .title h1 { font-style: italic; font-weight: 400; line-height: .95; font-size: clamp(64px, 15vw, 210px); color: #ffe3f6; text-shadow: 0 2px 50px rgba(18,0,14,.6); }
+  .title p { margin-top: 18px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .32em; color: #ff2ec8; opacity: .9; }
+  .hud { position: fixed; z-index: 5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; color: #ffd3f1; opacity: .55; }
+  .hud.tl { top: 18px; left: 20px; } .hud.br { bottom: 16px; right: 20px; text-align: right; }
+  .hud b { color: #ff2ec8; font-weight: 500; }
+  .grain { position: fixed; inset: 0; z-index: 8; pointer-events: none; opacity: .06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+</style>
+</head>
+<body>
+  <canvas id="rd"></canvas>
+  <div class="title"><h1>Diffusion</h1><p>GRAY-SCOTT · CURSOR = SEED</p></div>
+  <p class="hud tl">SPECIMEN · <b>MORPHOGENESIS</b></p>
+  <p class="hud br">f <b>0.0545</b> · k <b>0.062</b> · steps <b>6/frame</b></p>
+  <div class="grain"></div>
+<script>
+(function () {
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cv = document.getElementById('rd'), cx = cv.getContext('2d');
+  var GW = 176, GH = 110; // 시뮬 격자 — 화면과 무관한 고정 해상도
+  var A = new Float32Array(GW * GH).fill(1);
+  var B = new Float32Array(GW * GH);
+  var A2 = new Float32Array(GW * GH);
+  var B2 = new Float32Array(GW * GH);
+  var buf = document.createElement('canvas');
+  buf.width = GW; buf.height = GH;
+  var bx = buf.getContext('2d');
+  var img = bx.createImageData(GW, GH);
+
+  function seedBlob(gx, gy, r) {
+    for (var y = -r; y <= r; y++) for (var x = -r; x <= r; x++) {
+      if (x * x + y * y > r * r) continue;
+      var xi = (gx + x + GW) % GW, yi = (gy + y + GH) % GH;
+      B[yi * GW + xi] = 1;
+    }
+  }
+  for (var s = 0; s < 9; s++) seedBlob((Math.random() * GW) | 0, (Math.random() * GH) | 0, 3);
+
+  var W, H;
+  function resize() { W = innerWidth; H = innerHeight; cv.width = W; cv.height = H; cx.imageSmoothingEnabled = true; }
+  resize();
+  addEventListener('resize', resize);
+
+  var mgx = -1, mgy = -1, lastMove = -1e9;
+  function toGrid(e, cxp, cyp) { mgx = (cxp / W * GW) | 0; mgy = (cyp / H * GH) | 0; }
+  addEventListener('mousemove', function (e) { toGrid(e, e.clientX, e.clientY); lastMove = performance.now(); });
+  addEventListener('pointerdown', function (e) { seedBlob((e.clientX / W * GW) | 0, (e.clientY / H * GH) | 0, 5); });
+
+  var DA = 1.0, DB = 0.5, F = 0.0545, K = 0.062;
+  function step() {
+    for (var y = 0; y < GH; y++) {
+      var up = ((y - 1 + GH) % GH) * GW, dn = ((y + 1) % GH) * GW, row = y * GW;
+      for (var x = 0; x < GW; x++) {
+        var l = (x - 1 + GW) % GW, r = (x + 1) % GW, i = row + x;
+        var a = A[i], b = B[i];
+        // 라플라시안: 인접 0.2, 대각 0.05, 중심 -1
+        var la = A[up + x] * 0.2 + A[dn + x] * 0.2 + A[row + l] * 0.2 + A[row + r] * 0.2 +
+                 A[up + l] * 0.05 + A[up + r] * 0.05 + A[dn + l] * 0.05 + A[dn + r] * 0.05 - a;
+        var lb = B[up + x] * 0.2 + B[dn + x] * 0.2 + B[row + l] * 0.2 + B[row + r] * 0.2 +
+                 B[up + l] * 0.05 + B[up + r] * 0.05 + B[dn + l] * 0.05 + B[dn + r] * 0.05 - b;
+        var abb = a * b * b;
+        A2[i] = a + (DA * la - abb + F * (1 - a));
+        B2[i] = b + (DB * lb + abb - (K + F) * b);
+      }
+    }
+    var t = A; A = A2; A2 = t;
+    t = B; B = B2; B2 = t;
+  }
+
+  var lastBucket = -1;
+  function frame(t) {
+    var idle = t - lastMove > 2200;
+    if (idle) {
+      // 유휴: 2.7초마다 한 번씩만 시드 — 연속 주입은 A를 고갈시켜 전체를 죽인다
+      var bk = (t / 900) | 0;
+      if (bk !== lastBucket && bk % 3 === 0) {
+        lastBucket = bk;
+        var ax2 = (GW * (0.5 + 0.4 * Math.sin(t * 0.0003))) | 0;
+        var ay2 = (GH * (0.5 + 0.36 * Math.cos(t * 0.00042))) | 0;
+        seedBlob(ax2, ay2, 2);
+      }
+    } else if (mgx >= 0) seedBlob(mgx | 0, mgy | 0, 1);
+
+    for (var s2 = 0; s2 < 6; s2++) step();
+
+    // 렌더: B 농도를 마젠타 램프로
+    var d = img.data;
+    for (var i2 = 0, p = 0; i2 < GW * GH; i2++, p += 4) {
+      var v = Math.max(0, Math.min(1, (A[i2] - B[i2]) )); // 1=배지, 낮을수록 무늬
+      var m = 1 - v;
+      d[p] = 18 + m * 237;        // → #FF2EC8 방향
+      d[p + 1] = 0 + m * 60;
+      d[p + 2] = 14 + m * 186;
+      // 무늬 코어는 백열로
+      if (m > 0.72) { var w2 = (m - 0.72) / 0.28; d[p] += w2 * 0; d[p + 1] += w2 * 160; d[p + 2] += w2 * 55; }
+      d[p + 3] = 255;
+    }
+    bx.putImageData(img, 0, 0);
+    cx.drawImage(buf, 0, 0, GW, GH, 0, 0, W, H);
+    if (!reduced) requestAnimationFrame(frame);
+  }
+  for (var w0 = 0; w0 < 280; w0++) step(); // 워밍업: 무늬가 자란 상태로 시작
+  if (reduced) {
+    for (var w = 0; w < 200; w++) step();
+    frame(1e9); document.body.style.cursor = 'auto';
+  } else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
