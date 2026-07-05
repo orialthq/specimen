@@ -1,10 +1,27 @@
 ---
 import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
+import FilterBar from '../components/FilterBar.astro';
 import { formatDate, orderSpecimens, specimenNo, withBase } from '../lib/specimens';
 
 const specimens = await getCollection('specimens');
 const ordered = orderSpecimens(specimens);
+
+// 필터 파셋 — 빈도순, 실제 존재하는 값만
+const countBy = (vals: string[]): [string, number][] => {
+  const m = new Map<string, number>();
+  for (const v of vals) m.set(v, (m.get(v) ?? 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+};
+const facets = [
+  { key: 'category' as const, label: 'category', values: countBy(ordered.map((s) => s.data.category)) },
+  {
+    key: 'interaction' as const,
+    label: 'interaction',
+    values: countBy(ordered.flatMap((s) => s.data.interaction)),
+  },
+  { key: 'stack' as const, label: 'stack', values: countBy(ordered.flatMap((s) => s.data.stack)) },
+];
 ---
 
 <Base>
@@ -17,13 +34,21 @@ const ordered = orderSpecimens(specimens);
       </p>
     </header>
 
+    <FilterBar facets={facets} total={ordered.length} />
+
     <section class="py-12">
       <div class="grid gap-8 md:grid-cols-2">
         {
           ordered.map(
             (s, idx) =>
               s.data.snippet && (
-                <article class="border border-line transition-colors hover:border-accent">
+                <article
+                  class="border border-line transition-colors hover:border-accent"
+                  data-specimen-card
+                  data-category={s.data.category}
+                  data-interaction={s.data.interaction.join(' ')}
+                  data-stack={s.data.stack.join(' ')}
+                >
                   {/* 그리드에선 앰비언트 모션만(포인터 차단) — 클릭 시 해부 페이지 */}
                   <a
                     href={withBase(`/s/${s.id}/`)}
